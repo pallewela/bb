@@ -12,6 +12,32 @@ A single Rust binary, `bb`, that mirrors `gh`'s command shape and conventions fo
 Bitbucket Cloud (`api.bitbucket.org/2.0`). Someone who knows `gh` should be able to
 guess the `bb` command.
 
+### 2.1 Principle: stay as close to `gh` as possible
+
+`gh` parity is `bb`'s differentiator. Other Bitbucket CLIs (e.g. `bkt`, Atlassian's `twg`)
+cover more ground (Data Center, OAuth, more platforms), but none of them lets `gh`
+muscle memory carry over unchanged. Every command and flag decision follows these rules:
+
+- **Same names.** Where `gh` has an equivalent, use its command, subcommand and flag
+  names, short flags included (`-R`, `-L`, `-B/--base`, `-H/--head`, `-b/--body`,
+  `-t/--title`, `-w/--web`, ...), and the same positional arguments. Check
+  `gh <command> --help` before adding or renaming anything.
+- **Same behaviour.** Same defaults (e.g. `-L 30`), same streams (data on stdout;
+  hints, prompts and errors on stderr), same exit codes, same inference from the
+  current git checkout.
+- **Map, don't invent.** A Bitbucket concept that has a `gh` analog takes the `gh` name
+  (Pipelines → `bb run` as well as `bb pipeline`; the PR checks list → `bb pr checks`).
+  A Bitbucket-only concept (e.g. workspaces) gets the shape `gh` uses for similar
+  things: `list` / `view` / `create` / `delete`, `-L`, `--json`, `--web`.
+- **`gh` words for commands, Bitbucket words for data.** Commands and flags use `gh`'s
+  vocabulary; output shows what Bitbucket calls things (workspace, build number).
+- **Deviations are deliberate and recorded.** If Bitbucket's API forces a difference,
+  or a `gh` behaviour cannot be matched, note it and the reason in the command's
+  table in §5. An unrecorded difference from `gh` is a bug.
+- **Matching `gh` beats extra features.** A feature that would need a command shape
+  `gh` doesn't have needs a strong reason; prefer the `gh` form even if it's less
+  convenient.
+
 ## 3. Non-goals (v1)
 
 - Bitbucket Server / Data Center (different API).
