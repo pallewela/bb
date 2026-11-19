@@ -67,7 +67,7 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 | Repo resolution | `-R/--repo WORKSPACE/REPO` (global flag; also accepts a bitbucket.org URL). Otherwise parsed from the `origin` git remote of the cwd. |
 | Output | Human-readable aligned tables/text by default. Global `--json` prints the raw API JSON instead (lists print a JSON array). |
 | Auth | HTTP Basic `email:api_token` (Atlassian API token; Bearer does **not** work). Sources, in order: `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` env vars, then the saved login. Storage follows `gh`: the token lives in the OS keychain (macOS Keychain / Windows Credential Manager / Secret Service; service `bb:bitbucket.org`, account = email) and `~/.config/bb/hosts.json` (mode 0600) holds only the email. With `--insecure-storage`, or when no keychain is available, the token is written to `hosts.json` in plaintext instead. Keychain calls time out (3s on Linux, where a stuck Secret Service daemon can hang; 60s elsewhere to allow for an OS access prompt) and then fail or fall back rather than hang. |
-| Errors | Message on stderr, exit code 1. API errors show `HTTP <code>: <message>`. |
+| Errors | Message on stderr. API errors show `HTTP <code>: <message>`. Exit codes follow `gh`: 1 = error, 4 = authentication required (no usable credentials), 8 = checks pending (`pr checks`). |
 | Lists | `-L/--limit N` (default 30; `workspace list` 100; `0` = all); pagination followed automatically up to the limit. When `-L` is not given and items are left out, a note on stderr says how many were shown of the total (API `size`) and how to see more; nothing is added to stdout or `--json`. |
 | `--web` | Where offered, opens the resource in the browser instead of printing. |
 
@@ -75,8 +75,7 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 - *Gap:* `--json` prints raw API JSON; `gh`'s `--json FIELDS`, `--jq` and `--template` are a
   v1 non-goal (§3).
 - *Gap:* `-R` takes `WORKSPACE/REPO` or a bitbucket.org URL; there is no `HOST/` prefix (Cloud only).
-- *Gap:* every failure exits 1. `gh` uses 4 when auth is required, 2 when cancelled and 8 for
-  pending checks; match these (#6).
+- *Gap:* no exit code 2 ("cancelled"): `bb` has no interactive prompts to cancel (§3).
 
 ## 5. Commands
 
@@ -130,23 +129,25 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 - *Extra:* `--admin` (Bitbucket's per-workspace admin flag); `workspace`/`ws` as Bitbucket names.
 
 ### 5.3 `bb pr`
-`[PR]` argument = numeric id, a PR URL, or omitted → the open PR whose source is the
-current git branch.
+`[PR]` argument = numeric id (optionally `#12`), a PR URL, or a branch name, as in `gh`.
+A branch (or an omitted `[PR]`, meaning the current git branch) resolves to the open PR
+whose source is that branch, else the most recently updated PR from it in any state.
 
 | Command | API (under `/repositories/{ws}/{slug}/pullrequests`) |
 |---|---|
-| `pr list [--state open\|merged\|declined\|all] [--author NICK] [--base BRANCH] [--head BRANCH] [-L N]` | `GET ?state=…&q=…` — columns: id, title, source branch, author, state. |
-| `pr view [PR] [--comments] [--web]` | `GET /{id}` — title, state, author, branches, reviewers + approval status, description, URL. |
-| `pr create [-t TITLE] [-b BODY] [-B BASE] [-H HEAD] [--draft] [--reviewer UUID\|ACCOUNT_ID…] [--close-source-branch] [--fill] [--web]` | `POST` — head defaults to current branch, base to repo main branch; `--fill` takes title/body from the last commit. Prints the PR URL. |
-| `pr checkout PR` | `git fetch origin <source-branch>` + `git checkout <source-branch>`. |
-| `pr diff [PR]` | `GET /{id}/diff` (text). |
-| `pr merge [PR] [--merge\|--squash\|--fast-forward] [-m MESSAGE] [--close-source-branch]` | `POST /{id}/merge` with `merge_strategy`. |
-| `pr decline [PR]` (alias `close`) | `POST /{id}/decline`. |
+| `pr list` (alias `ls`) `[-s STATE] [-A NICK] [-B BASE] [-H HEAD] [-S QUERY] [-d] [-w] [-L N]` | `GET ?state=…&q=…`. `-S` searches title and description (`title ~ … OR description ~ …`); `-d` adds `draft=true`; `-w` opens the PR list page. Columns: id, title, source branch, author, state (+ draft). |
+| `pr view [PR] [-c/--comments] [-w/--web]` | `GET /{id}` — title, state, author, branches, reviewers + approval status, description, URL. |
+| `pr create` (alias `new`) `[-t TITLE] [-b BODY \| -F FILE] [-B BASE] [-H HEAD] [-d] [-r UUID\|ACCOUNT_ID…] [--close-source-branch] [-f \| --fill-first \| --fill-verbose] [--dry-run] [-w]` | `POST` — head defaults to current branch, base to repo main branch. Fill modes read the commits in `origin/BASE..HEAD` (falling back to the last commit): `--fill` uses one commit's subject/body, or for several commits the humanized branch name as title and a commit list as body; `--fill-first` uses the first commit; `--fill-verbose` puts every commit's subject and body in the description. Explicit `-t`/`-b` win. `--dry-run` prints what would be created. Prints the PR URL. |
+| `pr checkout PR` (alias `co`) `[-b LOCAL] [-f] [--detach]` | `git fetch origin +refs/heads/SRC:refs/remotes/origin/SRC`, then: new local branch → `checkout -b LOCAL --track origin/SRC`; existing → `checkout` + `merge --ff-only` (or `checkout -B` with `-f`); `--detach` → detached at `origin/SRC`. |
+| `pr diff [PR] [--name-only \| --patch] [--color always\|never\|auto] [-e GLOB…] [-w]` | `GET /{id}/diff`, `/{id}/patch`, or `/{id}/diffstat` for `--name-only`. `-e` drops files whose path or file name matches the glob. |
+| `pr merge [PR] [-m \| -s \| -r \| --fast-forward] [-t SUBJECT] [-b BODY \| -F FILE] [-d] [--close-source-branch]` | `POST /{id}/merge` with `merge_strategy` (`merge_commit`, `squash`, `rebase_fast_forward`, `fast_forward`) and `message` = subject + body. `-d` sets `close_source_branch` and deletes the local branch (switching to the base branch first if it's checked out). |
+| `pr close [PR] [-c COMMENT] [-d]` (alias `decline`) | Optional comment, then `POST /{id}/decline`. `-d` deletes the source branch (`DELETE /repositories/{ws}/{slug}/refs/branches/{name}`) and the local branch. |
+| `pr review [PR] -a \| -r \| -c [-b BODY \| -F FILE]` | Body (required for `-r`/`-c`) is posted as a comment; then `POST /{id}/approve` or `/{id}/request-changes`. |
 | `pr approve [PR]` / `pr unapprove [PR]` | `POST` / `DELETE /{id}/approve`. |
 | `pr request-changes [PR] [--undo]` | `POST` / `DELETE /{id}/request-changes`. |
-| `pr comment [PR] -b BODY [--file PATH --line N]` | `POST /{id}/comments` with `content.raw`, optional `inline: {path, to}`. |
+| `pr comment [PR] (-b BODY \| -F FILE) [--file PATH --line N] [--edit-last [--create-if-none]] [--delete-last --yes] [-w]` | `POST /{id}/comments` with `content.raw`, optional `inline: {path, to}`. `--edit-last` / `--delete-last` find your newest comment via `GET /user` (needs `read:user`) and `PUT` / `DELETE /{id}/comments/{cid}`. |
 | `pr comments [PR]` | `GET /{id}/comments` — author, location (if inline), body. |
-| `pr checks [PR]` | `GET /{id}/statuses` — state, name, URL. Exit code 1 if any check FAILED. |
+| `pr checks [PR] [--watch [-i SECS] [--fail-fast]] [-w]` | `GET /{id}/statuses` — state, name, URL. `--watch` re-polls (default every 10s) until nothing is INPROGRESS, printing the table when it changes. Exit 1 if any check FAILED or STOPPED, 8 if any is still INPROGRESS. |
 
 **Differences from `gh`**
 
@@ -161,20 +162,26 @@ PR states map as follows. `gh`'s values must be accepted with `gh`'s meaning; Bi
 | `declined` | DECLINED | *extra* |
 | `superseded` | SUPERSEDED | *extra* |
 
-- *Extra:* `pr decline` is the Bitbucket name for `gh pr close`; both names must work.
+- *Extra:* `pr decline` is the Bitbucket name for `gh pr close`; both names work.
 - *Extra:* `pr approve`, `pr unapprove` and `pr request-changes [--undo]` are separate Bitbucket
-  actions. `gh` uses `pr review -a/-r/-c`, which must also work; `unapprove` and `--undo` have no `gh` equivalent.
+  actions alongside `gh`'s `pr review -a/-r/-c`; `unapprove` and `--undo` have no `gh` equivalent.
 - *Extra:* `pr comments` (`gh` only has `pr view --comments`, which `bb` also supports).
 - *Extra:* `pr comment --file/--line` for inline comments.
 - *Extra:* `pr create --close-source-branch`, `pr merge --fast-forward` and `--close-source-branch`
-  (Bitbucket options). `gh pr merge -d/--delete-branch` should map to `close_source_branch`.
-- *Gap:* `pr create --reviewer` needs a UUID or account_id; `gh` takes a handle (#6: resolve nicknames).
+  (Bitbucket options; `--close-source-branch` keeps the local branch, `-d` deletes it too). `pr merge --message`
+  is kept as a hidden alias of `--subject`.
+- *Gap:* `pr merge -r/--rebase` uses `rebase_fast_forward` (rebase, no merge commit), the closest to
+  `gh`'s rebase. Bitbucket's `rebase_merge` and `squash_fast_forward` have no flag yet.
+- *Gap:* `pr create -r/--reviewer` needs a UUID or account_id; `gh` takes a handle. Bitbucket can't look
+  users up by nickname: `/workspaces/{ws}/members` only filters by email (and only for admins), so
+  resolving a nickname means scanning every member of the workspace (thousands in large ones).
 - *Gap:* no labels, assignees or milestones (Bitbucket has none), so `-l`, `-a` and `-m` on
   `pr create`/`pr list` don't apply.
-- *Gap (bug):* `pr merge -m` means `--message`, but in `gh` `-m` is `--merge`. Fix by switching to `gh`'s
-  `-m/--merge`, `-s/--squash`, `-t/--subject` and `-b/--body` (#6, breaking).
-- *Gap:* `[PR]` doesn't accept a branch name yet, `--state closed` isn't accepted yet, and the
-  remaining missing flags are listed in #6.
+- *Gap:* `pr checks --required`: Bitbucket's statuses don't say which builds a merge check requires.
+- *Gap:* `pr merge --auto/--admin/--match-head-commit`, `pr create --no-maintainer-edit/--recover/--attach`,
+  `pr comment --attach` and `-e/--editor` everywhere (no interactive editors, §3).
+- *Gap:* `pr list -S` is a substring match on title and description, not `gh`'s GitHub search syntax.
+- *Gap:* `pr checks` with nothing reported prints "No checks reported" and exits 0.
 
 ### 5.4 `bb pipeline` (the `gh run` analog; alias `bb run`)
 | Command | API (under `/repositories/{ws}/{slug}/pipelines`) |
@@ -230,7 +237,7 @@ src/output.rs    json mode flag, table printer, JSON field helpers, open-in-brow
 src/auth.rs      bb auth          src/pr.rs        bb pr
 src/repo.rs      bb repo          src/pipeline.rs  bb pipeline
 src/api.rs       bb api           src/browse.rs    bb browse
-src/workspace.rs bb workspace
+src/workspace.rs bb workspace    src/exit.rs      exit codes (gh's 1/4/8)
 ```
 
 Dependencies: `clap` (derive), `ureq` (blocking HTTP, no async runtime), `serde_json`,

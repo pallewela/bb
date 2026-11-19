@@ -38,18 +38,26 @@ pub fn short_time(iso: &str) -> String {
 
 /// Print rows as left-aligned columns. First row may be a header; no decoration is added.
 pub fn table(rows: &[Vec<String>]) {
+    print!("{}", table_string(rows));
+}
+
+/// `table`'s output as a string (one `\n`-terminated line per row).
+pub fn table_string(rows: &[Vec<String>]) -> String {
     let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
     let widths: Vec<usize> = (0..cols)
         .map(|c| rows.iter().filter_map(|r| r.get(c)).map(|x| x.chars().count()).max().unwrap_or(0))
         .collect();
+    let mut out = String::new();
     for row in rows {
         let line: Vec<String> = row
             .iter()
             .enumerate()
             .map(|(i, cell)| if i + 1 == row.len() { cell.clone() } else { format!("{cell:<w$}", w = widths[i]) })
             .collect();
-        println!("{}", line.join("  ").trim_end());
+        out += line.join("  ").trim_end();
+        out.push('\n');
     }
+    out
 }
 
 /// After a list that stopped at its `-L` limit, say so on stderr (keeps pipes and --json clean).
