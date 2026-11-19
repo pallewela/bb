@@ -295,7 +295,7 @@ if [ "$RC" -ne 0 ]; then summary; echo "cannot continue without the test reposit
 # `bb repo view WS/REPO` shows the repository's name, description, visibility and clone URLs.
 t "repo view" bb repo view "$FULL"
 assert_rc 0; assert_out "name: +$FULL"; assert_out "description: +bb e2e test $RUN_ID"
-assert_out 'visibility: +private'; assert_out 'clone \(ssh\): +git@bitbucket.org'
+assert_out 'visibility: +private'; assert_out 'clone \(ssh\): +git@(ssh\.)?bitbucket.org'
 
 # `-R WS/REPO` (global flag) selects the repository too, also as a bitbucket.org URL.
 t "repo view -R URL" in_dir "$TMP" bb repo view -R "$WEB"

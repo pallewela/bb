@@ -17,7 +17,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "bb", version, about = "Work with Bitbucket Cloud from the command line")]
 struct Cli {
     /// Select another repository: WORKSPACE/REPO or a bitbucket.org URL
-    #[arg(short = 'R', long, global = true, value_name = "WORKSPACE/REPO")]
+    #[arg(short = 'R', long = "repo", id = "repo_flag", global = true, value_name = "WORKSPACE/REPO")]
     repo: Option<String>,
     /// Print raw API JSON instead of human-readable output
     #[arg(long, global = true)]
@@ -83,5 +83,18 @@ fn main() {
     if let Err(e) = res {
         eprintln!("bb: {e:#}");
         std::process::exit(exit::code(&e));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_flag_works_on_subcommands_with_a_repo_positional() {
+        for args in [["bb", "repo", "view", "-R", "ws/r"], ["bb", "repo", "delete", "-R", "ws/r"]] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            assert_eq!(cli.repo.as_deref(), Some("ws/r"));
+        }
     }
 }
