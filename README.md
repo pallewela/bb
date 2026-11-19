@@ -14,7 +14,7 @@ Prebuilt binaries are on the [releases page](https://github.com/pallewela/bb/rel
 ## Auth
 
 Create a scoped Atlassian API token (Bitbucket product; repository + pull request + pipeline scopes,
-plus `read:workspace:bitbucket` for `bb workspace list`)
+plus `read:workspace:bitbucket` for `bb org list` and `read:user` for `bb pr comment --edit-last/--delete-last`)
 at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 
     bb auth login                      # prompts, verifies, saves the token to the system keychain
@@ -23,24 +23,38 @@ at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 
 ## Usage
 
+If you know `gh`, you know `bb`: commands, flags and flag values are `gh`'s, with `gh`'s meaning
+(see [PRD §2.1](PRD.md)). Bitbucket's own names work too, as extras: `pr decline` = `pr close`,
+`pipeline` = `run`, `workspace` = `org`, `pipeline stop` = `run cancel`, `--state declined`.
+
 Run inside a clone of a Bitbucket repo, or pass `-R WORKSPACE/REPO`. Add `--json` for raw API JSON.
-List commands show 30 items by default and say so when there are more; use `-L N` to choose how many, or `-L 0` for all.
+List commands show 30 items by default (`run list`: 20) and say so when there are more; use `-L N`
+to choose how many, or `-L 0` for all. `ls` works for every `list`.
 
-    bb workspace list [--admin]      bb repo list [WORKSPACE]
-    bb repo view / clone / create / delete
-    bb pr list                       bb pr view [PR] [--comments] [--web]
-    bb pr create --fill              bb pr checkout 12
-    bb pr diff                       bb pr merge --squash
-    bb pr approve / unapprove / request-changes / decline
-    bb pr comment -b "text" [--file src/x.rs --line 10]
-    bb pr comments                   bb pr checks
-    bb pipeline list                 bb pipeline view 42
-    bb pipeline run [--pipeline custom-name --var K=V]
-    bb pipeline logs 42 --failed     bb pipeline stop 42
-    bb api /user                     bb api PATH -X POST -f key=value [--paginate]
-    bb browse [PATH] [--no-browser]
+    bb org list [--admin]                      bb repo list [WORKSPACE] [--visibility private] [-l go]
+    bb repo view [-w] [-b BRANCH]              bb repo clone / create [-c] / delete --yes
 
-`[PR]` is an id, a PR URL, or omitted for the current branch's open PR. `bb run` is an alias for `bb pipeline`.
+    bb pr list [-s open|closed|merged|all] [-A NICK] [-B BASE] [-H HEAD] [-S TEXT] [-d] [-w]
+    bb pr view [PR] [-c] [-w]                  bb pr checkout PR [-b LOCAL] [-f]   (alias: co)
+    bb pr create -f | -t TITLE [-b BODY] [-d] [-r REVIEWER] [--dry-run]       (alias: new)
+    bb pr diff [PR] [--name-only] [-e '*.lock']
+    bb pr merge [PR] -m|-s|-r [-t SUBJECT] [-b BODY] [-d]
+    bb pr review [PR] -a | -r -b TEXT | -c -b TEXT
+    bb pr close [PR] [-c COMMENT] [-d]         bb pr checks [PR] [--watch] [--fail-fast]
+    bb pr comment [PR] -b TEXT [--edit-last]   (inline: --file src/x.rs --line 10)
+    bb pr approve / unapprove / request-changes [--undo] / comments      (Bitbucket extras)
+
+    bb run list [-b BRANCH] [-s failure] [-u @me] [-e pull_request]
+    bb run view [ID] [--log | --log-failed | -j STEP] [--exit-status]
+    bb run watch [ID] [--exit-status]          bb run cancel ID
+    bb workflow run [CUSTOM_PIPELINE] [-r BRANCH] [-f KEY=VALUE]
+
+    bb api /user [-i]                          bb api PATH -X POST -F count=3 -f name=x [-H 'K: V']
+    bb browse [PATH[:LINE] | PR | SHA] [-n] [-c] [-a] [-s] [--blame]
+
+`[PR]` is an id, a PR URL, or a branch name; omitted, it's the current branch's PR.
+Exit codes follow `gh`: 1 = error, 4 = not logged in, 8 = checks still pending (`pr checks`).
+Differences from `gh` (Bitbucket extras, and what can't be matched) are listed per command in the [PRD](PRD.md).
 
 ## Releases
 
