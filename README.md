@@ -42,6 +42,17 @@ List commands show 30 items by default and say so when there are more; use `-L N
 
 `[PR]` is an id, a PR URL, or omitted for the current branch's open PR. `bb run` is an alias for `bb pipeline`.
 
+## Testing
+
+    cargo test                          # unit tests
+    scripts/e2e.sh                      # end-to-end test of every command against Bitbucket
+
+`scripts/e2e.sh` creates a throwaway private repository in the `dupelk` workspace (set
+`WORKSPACE` at the top of the script), exercises every command on it with asserts, and deletes it
+afterwards (`KEEP=1` keeps it). It needs SSH access to bitbucket.org, `jq`, and about 10
+Pipelines build minutes (`SKIP_PIPELINES=1` skips those tests). `BB=target/debug/bb` tests a
+development build.
+
 ## Releases
 
 Every push to `main` that passes CI is released automatically (`.github/workflows/release.yml`):
