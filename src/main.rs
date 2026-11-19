@@ -8,6 +8,7 @@ mod output;
 mod pipeline;
 mod pr;
 mod repo;
+mod workspace;
 
 use clap::{Parser, Subcommand};
 
@@ -36,6 +37,12 @@ enum Cmd {
         #[command(subcommand)]
         cmd: repo::Cmd,
     },
+    /// Work with workspaces
+    #[command(alias = "ws")]
+    Workspace {
+        #[command(subcommand)]
+        cmd: workspace::Cmd,
+    },
     /// Work with pull requests
     Pr {
         #[command(subcommand)]
@@ -60,6 +67,7 @@ fn main() {
     let res = match cli.cmd {
         Cmd::Auth { cmd } => auth::run(cmd),
         Cmd::Repo { cmd } => repo::run(cmd),
+        Cmd::Workspace { cmd } => workspace::run(cmd),
         Cmd::Pr { cmd } => pr::run(cmd),
         Cmd::Pipeline { cmd } => pipeline::run(cmd),
         Cmd::Api(args) => api::run(args),
