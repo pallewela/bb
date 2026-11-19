@@ -27,7 +27,12 @@ impl Client {
     }
 
     pub fn with_creds(creds: &Creds) -> Client {
-        let raw = format!("{}:{}", creds.email, creds.token);
+        let auth = if creds.oauth.is_some() {
+            format!("Bearer {}", creds.token)
+        } else {
+            let raw = format!("{}:{}", creds.user, creds.token);
+            format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(raw))
+        };
         Client {
             // SameHost: /diff redirects within api.bitbucket.org (needs auth);
             // step logs redirect to presigned S3 URLs (must not get auth).
@@ -35,7 +40,7 @@ impl Client {
                 .timeout_connect(Duration::from_secs(15))
                 .redirect_auth_headers(ureq::RedirectAuthHeaders::SameHost)
                 .build(),
-            auth: format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(raw)),
+            auth,
         }
     }
 

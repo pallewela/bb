@@ -18,6 +18,14 @@ at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
     bb auth login --insecure-storage   # ...or in plaintext in ~/.config/bb/hosts.json (0600)
     export BITBUCKET_EMAIL=... BITBUCKET_TOKEN=...   # or use env vars (take precedence)
 
+Or log in through the browser with OAuth. Create an OAuth consumer under
+**Workspace settings → OAuth consumers** with callback URL `http://127.0.0.1:8765/callback` and
+permissions Account: Read, Repositories: Admin, Pull requests: Write, Pipelines: Write, then:
+
+    export BB_OAUTH_CLIENT_ID=<key> BB_OAUTH_CLIENT_SECRET=<secret>   # or --client-id/--client-secret
+    bb auth login --web                # opens the browser; token refreshed automatically
+    bb auth login --web --port 9000    # if 8765 is taken (update the consumer's callback URL to match)
+
 ## Usage
 
 Run inside a clone of a Bitbucket repo, or pass `-R WORKSPACE/REPO`. Add `--json` for raw API JSON.

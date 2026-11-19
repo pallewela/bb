@@ -16,7 +16,7 @@ guess the `bb` command.
 
 - Bitbucket Server / Data Center (different API).
 - Issues (Bitbucket's issue tracker is disabled on most repos; Jira is used instead).
-- Multiple accounts / `auth switch`. OAuth browser login flow, shell completions, aliases, extensions.
+- Multiple accounts / `auth switch`. Shell completions, aliases, extensions.
 - `gh`-style `--json field1,field2` + `--jq`. v1 has a plain `--json` (raw API JSON); pipe to `jq`.
 - Interactive prompts/editors beyond `auth login`.
 
@@ -37,9 +37,23 @@ guess the `bb` command.
 | Command | Behaviour |
 |---|---|
 | `auth login [--insecure-storage]` | Prompt for email + API token (or `--email`, `--with-token` reading token from stdin). Verify against the API, then save (keychain by default; replaces any previous login). Reports where the token was stored. |
-| `auth status` | Show where creds come from (env / keychain / plaintext file), the account if readable, and whether the token works. |
+| `auth login --web [--client-id ID] [--client-secret S] [--port N]` | OAuth browser login (see below). |
+| `auth status` | Show where creds come from (env / keychain / plaintext file), the login kind (API token / OAuth), the account if readable, and whether the token works. |
 | `auth logout` | Delete the saved login: keychain entry and `hosts.json`. |
 | `auth token` | Print the token (for scripting). |
+
+**OAuth browser login (`--web`).** Bitbucket's authorization-code grant
+(`bitbucket.org/site/oauth2/authorize` → `/site/oauth2/access_token`). Bitbucket has no device
+flow and requires the consumer secret for the code exchange, so the user supplies an OAuth
+consumer: `--client-id`/`--client-secret`, else `BB_OAUTH_CLIENT_ID`/`BB_OAUTH_CLIENT_SECRET`,
+else the secret is prompted. The consumer's callback URL must be `http://127.0.0.1:<port>/callback`
+(default port 8765). `bb` listens on that port, opens the authorize URL (also printing it), checks
+the random `state`, exchanges the code, and verifies with `GET /user` (username keys the keychain
+entry). API calls then use `Authorization: Bearer <access token>`. Storage mirrors API tokens:
+`hosts.json` holds `{"auth": "oauth", "user": …}`; the keychain (or `hosts.json` with
+`--insecure-storage`) holds the access token, refresh token, expiry and consumer key/secret. When
+the access token is within 60s of expiry, any command refreshes it with the refresh token and
+re-saves it. Times out after 5 minutes waiting for the browser. Env-var credentials still win.
 
 Token verification: `GET /user`; if that 403s (scoped token lacking `read:user`),
 treat the token as valid — a bad token gets 401, so 403 proves it authenticated.
@@ -99,7 +113,8 @@ Single crate, one module per command group, thin shared core.
 ```
 src/main.rs      clap CLI root, global flags, dispatch
 src/client.rs    HTTP client: auth header, get/post/put/delete, paginate, error mapping
-src/config.rs    credentials: env → keychain/hosts.json; save/delete
+src/config.rs    credentials: env → keychain/hosts.json; save/delete; OAuth refresh on load
+src/oauth.rs     OAuth browser flow: loopback callback listener, code exchange, refresh
 src/context.rs   repo resolution (-R or git remote), git helpers
 src/output.rs    json mode flag, table printer, JSON field helpers, open-in-browser
 src/auth.rs      bb auth          src/pr.rs        bb pr
@@ -114,7 +129,8 @@ layer; Bitbucket payloads are large and we read a handful of fields.
 ## 7. Quality bar
 
 - `cargo build` warning-free; `cargo test` green.
-- Unit tests for pure logic: remote-URL parsing, PR-argument parsing, query building, `-f` body building.
+- Unit tests for pure logic: remote-URL parsing, PR-argument parsing, query building, `-f` body building,
+  OAuth callback parsing/`state` check (against a local listener) and token-response parsing.
 - No network in tests. Live verification is a manual read-only smoke test.
 
 ## 8. Milestones

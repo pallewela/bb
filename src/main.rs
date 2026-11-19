@@ -4,6 +4,7 @@ mod browse;
 mod client;
 mod config;
 mod context;
+mod oauth;
 mod output;
 mod pipeline;
 mod pr;
