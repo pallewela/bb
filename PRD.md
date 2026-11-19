@@ -186,20 +186,52 @@ PR states map as follows. `gh`'s values must be accepted with `gh`'s meaning; Bi
 ### 5.4 `bb pipeline` (the `gh run` analog; alias `bb run`)
 | Command | API (under `/repositories/{ws}/{slug}/pipelines`) |
 |---|---|
-| `pipeline list [--branch B] [-L N]` | `GET /?sort=-created_on` — build number, state/result, ref, trigger, creator, created. |
-| `pipeline view BUILD_NUMBER\|UUID [--web]` | `GET /{id}` + `GET /{id}/steps/` — summary + per-step status/duration. |
-| `pipeline run [--branch B] [--pipeline CUSTOM_NAME] [--var K=V…]` | `POST /` with `pipeline_ref_target` (branch defaults to current). Custom pipelines use a `selector: {type: custom, pattern}`. |
-| `pipeline stop BUILD_NUMBER\|UUID` | `POST /{uuid}/stopPipeline`. |
-| `pipeline logs BUILD_NUMBER\|UUID [--step NAME\|UUID] [--failed]` | `GET /{uuid}/steps/{step}/log` — default: all steps in order; `--failed`: only failed steps. |
+`[ID]` = build number (`GET /{build_number}` works in place of the UUID) or UUID; omitted → the
+latest pipeline whose branch is the current git branch (`GET /?target.branch=B&sort=-created_on&pagelen=1`).
+
+| Command | API (under `/repositories/{ws}/{slug}/pipelines`) |
+|---|---|
+| `pipeline list` (alias `ls`) `[-b B] [-s STATUS] [-u USER] [-c SHA] [-w NAME] [-e EVENT] [-L N]` | `GET /?sort=-created_on` — build number, state/result, ref, trigger, creator, created. Default `-L 20`. All filters are server-side query parameters (see below). |
+| `pipeline view [ID] [-j STEP] [--log\|--log-failed] [--exit-status] [-w/--web]` | `GET /{id}` + `GET /{id}/steps/` — summary + per-step status/duration (`-j`: one step). `--log`/`--log-failed` print step logs as `pipeline logs` does. |
+| `pipeline watch [ID] [--exit-status] [-i N]` | Polls `GET /{uuid}` + `/steps/` every N seconds (default 3), printing each pipeline/step status change, until the pipeline completes. |
+| `pipeline run [-r/--ref/--branch B] [--pipeline CUSTOM_NAME] [-f/--raw-field/--var K=V…] [-F/--field K=V…]` | `POST /` with `pipeline_ref_target` (branch defaults to current). Custom pipelines use a `selector: {type: custom, pattern}`; variables go in `variables: [{key, value}]`. |
+| `workflow run [NAME] [-r/--ref B] [-f K=V…] [-F K=V…]` | Same `POST /`: NAME is a custom pipeline; no NAME runs the ref's default pipeline. The ref defaults to the repo's main branch, as in `gh`. `-F K=@file` / `@-` reads the value from a file / stdin. |
+| `pipeline cancel ID` (alias `stop`) | `POST /{uuid}/stopPipeline`. |
+| `pipeline logs [ID] [--step NAME\|UUID] [--failed]` | `GET /{uuid}/steps/{step}/log` — default: all steps in order; `--failed`: only failed steps. |
+
+`run list` filter mapping (all server-side; checked live, repeated values are OR-ed):
+
+| Flag | Query parameter | Values |
+|---|---|---|
+| `-b/--branch` | `target.branch` | Matches branch, custom-on-branch and pull request pipelines (by source branch), like `gh`'s head branch. |
+| `-s/--status` | `status` | `gh`: `queued`/`pending`/`requested` → PENDING+PARSING, `in_progress` → BUILDING+PAUSED+HALTED, `waiting`/`action_required` → PAUSED+HALTED, `completed` → PASSED+FAILED+ERROR+STOPPED, `success` → PASSED, `failure` → FAILED, `cancelled` → STOPPED, `startup_failure` → ERROR. Bitbucket extras: `successful`, `failed`, `error`, `stopped`, `running`, `paused`, `halted`, `parsing`. |
+| `-u/--user` | `creator.uuid` | UUID or `@me` (`GET /user`). A nickname, display name or account ID is looked up among the 500 most recent pipelines' creators (the API can't filter by name). |
+| `-c/--commit` | `target.commit.hash` | The API needs the full hash; an abbreviated one is expanded with `GET /commit/{sha}`. |
+| `-w/--workflow` | `target.selector.pattern` | Custom pipeline name (or branch pattern). |
+| `-e/--event` | `trigger_type` / `target.selector.type` | `push` → PUSH, `workflow_dispatch`/`manual` → MANUAL, `schedule` → SCHEDULED, `parent_step` → PARENT_STEP, `pull_request` → selector type PULLREQUESTS (PR pipelines are PUSH-triggered). |
 
 **Differences from `gh`**
 - *Extra:* `pipeline` is the Bitbucket name; `run` is the `gh` name, and both work.
-- *Extra:* `pipeline logs`. `gh`'s form, `run view --log / --log-failed / -j`, must also work (#6).
-- *Extra:* `pipeline stop` is the Bitbucket name for `gh run cancel`; both must work (#6).
-- *Extra:* `pipeline run --branch/--pipeline/--var`. Triggering a run is `gh workflow run NAME --ref B -f k=v`
-  in `gh`, and that form (custom pipeline = workflow) must also work (#6).
-- *Gap:* `run watch`, `run rerun` (if the API supports re-runs), `run list` filters (`-s`, `-u`,
-  `-c`, `-w`, `-e`), `-b` for `--branch`, the default `-L 20`, and `run view` without an ID (#6).
+- *Extra:* `pipeline logs [--step] [--failed]`, the same as `run view --log / --log-failed / -j`.
+- *Extra:* `pipeline stop` is the Bitbucket name for `run cancel`; both work.
+- *Extra:* `pipeline run --branch/--pipeline/--var` (and `-r/--ref`, `-f`, `-F`). `gh`'s form is
+  `workflow run NAME --ref B -f k=v`, which also works.
+- *Extra:* `run list -s` accepts Bitbucket's status names; `-u` accepts a UUID or display name.
+- `run view`/`run watch` without an ID use the latest pipeline for the current branch instead of
+  prompting (§3). `run view -j` needs the pipeline ID too (steps aren't addressable on their own).
+- `run watch` prints status-change lines rather than redrawing the screen, and also stops (exit 0)
+  when the pipeline is PAUSED or HALTED waiting for a manual step, since watching can't make it continue.
+- `run view -v` is accepted and does nothing (steps are always shown).
+- *Gap:* no `run rerun [--failed] [-j] [-d]`. The Bitbucket Cloud REST API has no endpoint to re-run a
+  pipeline or its failed steps (the OpenAPI spec only offers list/get/create/stopPipeline under
+  `/pipelines`; the `write:pipeline` scope text mentions re-runs, but that is a web-UI-only action).
+  Use `workflow run` / `pipeline run` to start a new run.
+- *Gap:* no `run list --created`, `-a/--all`; no `run view -a/--attempt`; no `run cancel --force`;
+  no `run watch --compact`; no `run delete`, `run download`.
+- *Gap:* `workflow run --json` (inputs as JSON on stdin) clashes with the global `--json` flag; use `-f`/`-F`.
+  `--ref` takes a branch only (Bitbucket's `ref_type` would need to know it's a tag).
+- *Gap:* no `workflow list/view/enable/disable` (custom pipelines live in `bitbucket-pipelines.yml`;
+  there is no API to list or toggle them).
 
 ### 5.5 `bb api`
 `bb api PATH [-X METHOD] [-f/--raw-field key=value…] [-F/--field key=value…] [-H/--header key:value…] [--input FILE|-] [-i/--include] [--silent] [--verbose] [--paginate]`

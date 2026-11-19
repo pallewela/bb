@@ -55,6 +55,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: pipeline::Cmd,
     },
+    /// Run custom pipelines (the `gh workflow` analog)
+    Workflow {
+        #[command(subcommand)]
+        cmd: pipeline::WorkflowCmd,
+    },
     /// Make an authenticated API request
     Api(api::Args),
     /// Open the repository in the browser
@@ -71,6 +76,7 @@ fn main() {
         Cmd::Workspace { cmd } => workspace::run(cmd),
         Cmd::Pr { cmd } => pr::run(cmd),
         Cmd::Pipeline { cmd } => pipeline::run(cmd),
+        Cmd::Workflow { cmd } => pipeline::workflow(cmd),
         Cmd::Api(args) => api::run(args),
         Cmd::Browse(args) => browse::run(args),
     };
