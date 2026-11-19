@@ -21,7 +21,11 @@ pub enum Cmd {
         insecure_storage: bool,
     },
     /// Show where credentials come from and whether they work
-    Status,
+    Status {
+        /// Also print the API token
+        #[arg(short = 't', long)]
+        show_token: bool,
+    },
     /// Delete the saved login (keychain entry and config file)
     Logout,
     /// Print the API token (for scripting)
@@ -31,7 +35,7 @@ pub enum Cmd {
 pub fn run(cmd: Cmd) -> Result<()> {
     match cmd {
         Cmd::Login { email, with_token, insecure_storage } => login(email, with_token, insecure_storage),
-        Cmd::Status => status(),
+        Cmd::Status { show_token } => status(show_token),
         Cmd::Logout => {
             if config::delete()? {
                 eprintln!("Logged out: removed the saved login");
@@ -106,10 +110,13 @@ fn login(email: Option<String>, with_token: bool, insecure: bool) -> Result<()> 
     Ok(())
 }
 
-fn status() -> Result<()> {
+fn status(show_token: bool) -> Result<()> {
     let (creds, src) = config::load()?;
     println!("Credentials: {}", describe(src));
     println!("Email:       {}", creds.email);
+    if show_token {
+        println!("Token value: {}", creds.token);
+    }
     match verify(&Client::with_creds(&creds)) {
         Ok(Some(name)) => println!("Account:     {name}\nToken:       valid"),
         Ok(None) => println!("Account:     (not readable: token lacks read:user)\nToken:       valid"),

@@ -39,7 +39,7 @@ enum Cmd {
         cmd: repo::Cmd,
     },
     /// Work with workspaces
-    #[command(alias = "ws")]
+    #[command(alias = "ws", visible_alias = "org")]
     Workspace {
         #[command(subcommand)]
         cmd: workspace::Cmd,
