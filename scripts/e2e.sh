@@ -15,7 +15,7 @@
 #   - bb logged in (`bb auth login`) or BITBUCKET_EMAIL/BITBUCKET_TOKEN set. The token needs the
 #     repository (read, write, admin, delete), pull request (read, write), pipeline (read, write),
 #     read:workspace:bitbucket and read:user scopes.
-#   - git with SSH access to bitbucket.org (`ssh -T git@bitbucket.org` works), jq, timeout.
+#   - git with SSH access to bitbucket.org (`ssh -T git@ssh.bitbucket.org` works), jq, timeout.
 #   - Pipelines must be allowed in the workspace. Section 9 uses roughly 10 build minutes;
 #     set SKIP_PIPELINES=1 to skip it.
 #
@@ -159,7 +159,7 @@ status() {
     -f name="E2E $2" -f url="https://example.com/$2" >/dev/null
 }
 
-pr_state() { bb --json pr view "$1" | jq -r .state; }
+pr_state() { bb --json pr view -R "$FULL" "$1" | jq -r .state; }
 
 cleanup() {
   cd / || return
@@ -344,7 +344,7 @@ assert_rc 0; assert_json "map(.full_name) | index(\"$FULL\") != null"
 # `bb repo clone WS/REPO DIR` clones over SSH (an empty repository at this point).
 t "repo clone" bb repo clone "$FULL" "$CLONE"
 assert_rc 0
-assert_eq "$(git -C "$CLONE" remote get-url origin 2>/dev/null)" "git@bitbucket.org:$FULL.git" "origin"
+assert_eq "$(git -C "$CLONE" remote get-url origin 2>/dev/null)" "git@ssh.bitbucket.org:$FULL.git" "origin"
 
 # Seed the repository: main gets a README and a bitbucket-pipelines.yml (used in section 9).
 # No pipeline runs on push: Pipelines are only enabled in section 9.
@@ -417,14 +417,14 @@ section "4. api: raw authenticated requests"
 # `bb api PATH` sends GET to https://api.bitbucket.org/2.0/PATH and prints the JSON response.
 t "api /user" bb api /user
 assert_rc 0; assert_json '.uuid | startswith("{")'
-NICK="$(jq -r .nickname <<<"$OUT")"
+USERNAME="$(jq -r .username <<<"$OUT")"; USER_UUID="$(jq -r .uuid <<<"$OUT")"
 
 # A full URL works too.
 t "api full URL" bb api "https://api.bitbucket.org/2.0/repositories/$FULL"
 assert_rc 0; assert_json ".full_name == \"$FULL\""
 
-# For GET, -f fields go into the query string (as in gh).
-t "api GET -f pagelen=1" bb api "/repositories/$WORKSPACE" -f pagelen=1
+# Fields make the request a POST (as in gh); with -X GET they go into the query string.
+t "api GET -f pagelen=1" bb api "/repositories/$WORKSPACE" -X GET -f pagelen=1
 assert_rc 0; assert_json '.pagelen == 1'
 
 # `-i` prints the status line and headers before the body.
@@ -437,7 +437,7 @@ assert_rc 0; assert_eq "$OUT" "" "stdout"
 
 # `--verbose` prints request/response headers to stderr, but never the Authorization header.
 t "api --verbose" bb api /user --verbose
-assert_rc 0; assert_err 'GET'; refute_err '[Aa]uthorization'
+assert_rc 0; assert_err 'GET'; refute_err '^> [Aa]uthorization'
 assert_eq "$(grep -cF -- "$TOKEN" <<<"$ERR")" 0 "token in stderr"
 
 # `--paginate` follows `next` links and prints one combined array.
@@ -564,7 +564,7 @@ printf 'Body of B from a file\n' >"$TMP/body-b.md"
 t "pr new -d -F FILE" in_dir "$CLONE" bb pr new -t "$TAG draft B" -d -F "$TMP/body-b.md"
 assert_rc 0; assert_out "^$WEB/pull-requests/[0-9]+\$"
 PR_B="$(sed -nE 's#.*/pull-requests/([0-9]+)$#\1#p' <<<"$OUT")"
-assert_eq "$(bb --json pr view "$PR_B" | jq -r '.draft, .description' | tr '\n' '|')" "true|Body of B from a file|" "draft, body"
+assert_eq "$(bb --json pr view -R "$FULL" "$PR_B" | jq -r '.draft, .description' | tr '\n' '|')" "true|Body of B from a file|" "draft, body"
 git -C "$CLONE" checkout -q feature-a
 
 # ---------------------------------------------------------------------------------------------
@@ -583,7 +583,7 @@ t "pr list -B main" in_dir "$CLONE" bb pr list -B main
 assert_rc 0; assert_out "^#$PR_A "; assert_out "^#$PR_B "
 t "pr list -S" in_dir "$CLONE" bb pr list -S "draft B"
 assert_rc 0; assert_out "^#$PR_B "; refute_out "^#$PR_A "
-t "pr list -A" in_dir "$CLONE" bb pr list -A "$NICK"
+t "pr list -A" in_dir "$CLONE" bb pr list -A "$USERNAME"
 assert_rc 0; assert_out "^#$PR_A "
 t "pr list -A (someone else)" in_dir "$CLONE" bb pr list -A no-such-user-e2e
 assert_rc 0; assert_err 'No pull requests found'
@@ -698,7 +698,7 @@ assert_rc 0; assert_out "^Reviewed pull request #$PR_A\$"
 
 # Approve / request changes. Bitbucket may refuse these on your own PR; if so, the commands
 # must still reach the API and report its error, so both outcomes are accepted here.
-approved() { bb --json pr view "$PR_A" | jq -r --arg n "$NICK" '[.participants[] | select(.user.nickname == $n) | .approved] | any'; }
+approved() { bb --json pr view -R "$FULL" "$PR_A" | jq -r --arg u "$USER_UUID" '[.participants[] | select(.user.uuid == $u) | .approved] | any'; }
 t "pr review -a" in_dir "$CLONE" bb pr review "$PR_A" -a
 if [ "$RC" -eq 0 ]; then
   assert_out "^Approved pull request #$PR_A\$"; assert_eq "$(approved)" true "approved"
@@ -759,7 +759,7 @@ t "pr checks -w" in_dir "$CLONE" bb pr checks "$PR_A" -w
 assert_rc 0; assert_opened "^$URL_A\$"
 
 # `bb pr checkout` fetches the PR's source branch into another clone and switches to it.
-git clone -q "git@bitbucket.org:$FULL.git" "$CLONE2" 2>/dev/null
+git clone -q "git@ssh.bitbucket.org:$FULL.git" "$CLONE2" 2>/dev/null
 head2() { git -C "$CLONE2" rev-parse HEAD; }
 branch2() { git -C "$CLONE2" branch --show-current; }
 t "pr checkout ID" in_dir "$CLONE2" bb pr checkout "$PR_A"
@@ -769,8 +769,8 @@ assert_rc 0; assert_eq "$(branch2)" feature-a "branch"; assert_eq "$(head2)" "$S
 t "pr co -b" in_dir "$CLONE2" bb pr co feature-a -b review-a
 assert_rc 0; assert_eq "$(branch2)" review-a "branch"; assert_eq "$(head2)" "$SHA_A" "HEAD"
 
-# With a diverged local branch, checkout refuses (fast-forward only) unless `-f` resets it.
-git -C "$CLONE2" commit -q --allow-empty -m "local only"
+# With a diverged local branch (local-only commit, missing the PR's commits), checkout refuses (fast-forward only) unless `-f` resets it.
+git -C "$CLONE2" reset -q --hard origin/main && git -C "$CLONE2" commit -q --allow-empty -m "local only"
 t "pr checkout (diverged)" in_dir "$CLONE2" bb pr checkout "$PR_A" -b review-a
 assert_eq "$([ "$RC" -ne 0 ] && echo yes)" yes "non-zero exit"
 t "pr checkout -f" in_dir "$CLONE2" bb pr checkout "$PR_A" -b review-a -f

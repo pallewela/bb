@@ -26,7 +26,7 @@ pub enum Cmd {
         /// Filter by state: open, closed (merged, declined or superseded), merged, all, declined, superseded
         #[arg(short, long, default_value = "open", value_parser = STATES, hide_possible_values = true)]
         state: String,
-        /// Filter by author nickname
+        /// Filter by author username
         #[arg(short = 'A', long)]
         author: Option<String>,
         /// Filter by base (destination) branch
@@ -732,7 +732,7 @@ struct Filter<'a> {
 
 fn list_query(f: &Filter, limit: usize) -> String {
     let mut params: Vec<String> = states(f.state).iter().map(|st| format!("state={st}")).collect();
-    let mut q: Vec<String> = [("author.nickname", &f.author), ("destination.branch.name", &f.base), ("source.branch.name", &f.head)]
+    let mut q: Vec<String> = [("author.username", &f.author), ("destination.branch.name", &f.base), ("source.branch.name", &f.head)]
         .into_iter()
         .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}=\"{v}\"")))
         .collect();
@@ -1022,7 +1022,7 @@ mod tests {
         let f = Filter { author: Some("bob".into()), base: Some("main".into()), ..filter("all") };
         assert_eq!(
             list_query(&f, 100),
-            "state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED&q=author.nickname%3D%22bob%22%20AND%20destination.branch.name%3D%22main%22&pagelen=50"
+            "state=OPEN&state=MERGED&state=DECLINED&state=SUPERSEDED&q=author.username%3D%22bob%22%20AND%20destination.branch.name%3D%22main%22&pagelen=50"
         );
         let f = Filter { search: Some("fix \"x\"".into()), draft: true, ..filter("open") };
         assert_eq!(

@@ -25,7 +25,7 @@ impl Repo {
         Repo::parse(&remote).context("`origin` is not a Bitbucket remote; use -R WORKSPACE/REPO")
     }
 
-    /// Accepts `ws/repo`, `git@bitbucket.org:ws/repo.git`, `https://[user@]bitbucket.org/ws/repo[.git][/...]`.
+    /// Accepts `ws/repo`, `git@[ssh.]bitbucket.org:ws/repo.git`, `https://[user@]bitbucket.org/ws/repo[.git][/...]`.
     pub fn parse(s: &str) -> Result<Repo> {
         let s = s.trim();
         let path = match s.split_once("bitbucket.org") {
@@ -54,7 +54,7 @@ impl Repo {
     }
 
     pub fn ssh_url(&self) -> String {
-        format!("git@bitbucket.org:{}/{}.git", self.workspace, self.slug)
+        format!("git@ssh.bitbucket.org:{}/{}.git", self.workspace, self.slug)
     }
 }
 
@@ -94,6 +94,7 @@ mod tests {
         for s in [
             "ws/repo",
             "git@bitbucket.org:ws/repo.git",
+            "git@ssh.bitbucket.org:ws/repo.git",
             "ssh://git@bitbucket.org/ws/repo.git",
             "https://user@bitbucket.org/ws/repo.git",
             "https://bitbucket.org/ws/repo",
