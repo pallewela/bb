@@ -23,6 +23,7 @@
 #   scripts/e2e.sh                     # uses `bb` from PATH
 #   BB=target/debug/bb scripts/e2e.sh  # test a development build
 #   KEEP=1 scripts/e2e.sh              # keep the test repository afterwards
+#   VERBOSE=1 scripts/e2e.sh           # print each command before running it
 #
 # Exit status: 0 if every assert passed, 1 otherwise.
 
@@ -79,6 +80,11 @@ bb() { "$BB" "$@"; }
 # The asserts below check these and are labelled with DESCRIPTION.
 t() {
   DESC="$1"; shift
+  if [ -n "${VERBOSE:-}" ]; then
+    local cmd; cmd="$(printf '%q ' "$@")"
+    [ -n "$TOKEN" ] && cmd="${cmd//"$TOKEN"/<token>}"
+    printf '  \033[2m$ %s\033[0m\n' "$cmd"
+  fi
   rm -f "$OPENED"
   OUT="$("$@" 2>"$ERRF")"
   RC=$?
