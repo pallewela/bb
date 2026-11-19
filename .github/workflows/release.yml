@@ -1,0 +1,234 @@
+name: CI & Release
+
+# Every push to main is tested and, if green, released:
+#   - version = latest vX.Y.Z tag bumped by the head commit's marker
+#     ([bump:major] / BREAKING CHANGE, [bump:minor], otherwise patch);
+#     the first release uses the version in Cargo.toml.
+#   - "[skip release]" in the head commit message skips the release.
+#   - the Homebrew tap (pallewela/homebrew-tap) is bumped via
+#     repository_dispatch when the TAP_REPO_TOKEN secret is set.
+# Pull requests run the test job only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Queue pushes to main so two releases never compute the same version.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Build & Test (macOS arm64)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+
+      - name: Build
+        run: cargo build --all-targets --locked
+
+      - name: Test
+        run: cargo test --locked
+
+  release:
+    name: Release (macOS arm64)
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: v
+        run: |
+          set -euo pipefail
+          HEAD_MSG=$(git log -1 --format=%B)
+          if echo "$HEAD_MSG" | grep -qiE '\[skip release\]'; then
+            echo "Head commit requests [skip release]; not releasing."
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ -n "$(git tag --points-at HEAD --list 'v[0-9]*')" ]; then
+            echo "HEAD is already tagged; not releasing again."
+            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          PREV=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          if [ -z "$PREV" ]; then
+            NEW="v$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -n1)"
+          else
+            LEVEL=patch
+            if echo "$HEAD_MSG" | grep -qE '\[bump:major\]|BREAKING CHANGE'; then
+              LEVEL=major
+            elif echo "$HEAD_MSG" | grep -qE '\[bump:minor\]'; then
+              LEVEL=minor
+            fi
+            V="${PREV#v}"; MAJ="${V%%.*}"; REST="${V#*.}"; MIN="${REST%%.*}"; PAT="${REST#*.}"
+            case "$LEVEL" in
+              major) MAJ=$((MAJ+1)); MIN=0; PAT=0 ;;
+              minor) MIN=$((MIN+1)); PAT=0 ;;
+              patch) PAT=$((PAT+1)) ;;
+            esac
+            NEW="v${MAJ}.${MIN}.${PAT}"
+          fi
+          echo "Previous: ${PREV:-<none>}  Next: $NEW"
+          {
+            echo "skip=false"
+            echo "prev=$PREV"
+            echo "tag=$NEW"
+            echo "version=${NEW#v}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        if: steps.v.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+        if: steps.v.outputs.skip != 'true'
+
+      - name: Build release binary
+        if: steps.v.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Stamp the tag's version into the binary (bb --version).
+          sed -i.bak -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm Cargo.toml.bak
+          cargo build --release
+          ./target/release/bb --version | grep -qx "bb ${VERSION}"
+
+      - name: Package tarball
+        if: steps.v.outputs.skip != 'true'
+        id: pkg
+        env:
+          TAG: ${{ steps.v.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="bb-${TAG}-aarch64-apple-darwin.tar.gz"
+          cp LICENSE README.md target/release/
+          tar -C target/release -czf "$ARCHIVE" bb LICENSE README.md
+          SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          {
+            echo "archive=$ARCHIVE"
+            echo "sha256=$SHA256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write release notes
+        if: steps.v.outputs.skip != 'true'
+        env:
+          PREV: ${{ steps.v.outputs.prev }}
+          TAG: ${{ steps.v.outputs.tag }}
+          ARCHIVE: ${{ steps.pkg.outputs.archive }}
+          SHA256: ${{ steps.pkg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          RANGE="${PREV:+${PREV}..}HEAD"
+          {
+            echo "## Changes"
+            echo
+            git log "$RANGE" --no-merges --format='- %s (%h)' | grep -viE '\[skip release\]' || true
+            echo
+            echo "## Install via Homebrew"
+            echo
+            echo '```sh'
+            echo 'brew install pallewela/tap/bb'
+            echo '```'
+            echo
+            echo 'Upgrading: `brew update && brew upgrade bb`'
+            echo
+            echo "## Manual install (macOS arm64)"
+            echo
+            echo '```sh'
+            echo "curl -L https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ARCHIVE} | tar -xz bb"
+            echo 'install -m 0755 bb /usr/local/bin/bb'
+            echo '```'
+            echo
+            echo "**SHA256** (\`${ARCHIVE}\`): \`${SHA256}\`"
+          } > notes.md
+          cat notes.md
+
+      # Creates the tag at this commit and publishes all assets in one call
+      # (releases are immutable once published).
+      - name: Create GitHub Release
+        if: steps.v.outputs.skip != 'true'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.v.outputs.tag }}
+          body_path: notes.md
+          files: |
+            ${{ steps.pkg.outputs.archive }}
+            ${{ steps.pkg.outputs.archive }}.sha256
+
+      - name: Check tap token presence
+        if: steps.v.outputs.skip != 'true'
+        id: tap
+        env:
+          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+        run: |
+          if [ -n "${TAP_REPO_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TAP_REPO_TOKEN secret is not set; skipping Homebrew tap bump."
+          fi
+
+      - name: Bump Homebrew tap formula
+        if: steps.v.outputs.skip != 'true' && steps.tap.outputs.present == 'true'
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697  # v4
+        with:
+          token: ${{ secrets.TAP_REPO_TOKEN }}
+          repository: pallewela/homebrew-tap
+          event-type: bb-release
+          client-payload: |
+            {
+              "tag": "${{ steps.v.outputs.tag }}",
+              "sha256": "${{ steps.pkg.outputs.sha256 }}"
+            }
+
+      # repository_dispatch only confirms the event was accepted; poll the
+      # formula so a green release means brew actually has the new version.
+      - name: Verify Homebrew tap formula updated
+        if: steps.v.outputs.skip != 'true' && steps.tap.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+          VERSION: ${{ steps.v.outputs.version }}
+          EXPECTED_SHA256: ${{ steps.pkg.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            content=$(gh api repos/pallewela/homebrew-tap/contents/Formula/bb.rb \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+            if printf '%s\n' "$content" | grep -qE "^  version \"${VERSION}\"\$" \
+               && printf '%s\n' "$content" | grep -qiE "^  sha256 \"${EXPECTED_SHA256}\"\$"; then
+              echo "Tap formula updated to ${VERSION}."
+              exit 0
+            fi
+            echo "Formula not yet at ${VERSION} (attempt ${attempt}/18); sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::Tap formula did not update to ${VERSION} within 3 minutes."
+          exit 1
