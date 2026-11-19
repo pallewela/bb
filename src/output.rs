@@ -52,6 +52,23 @@ pub fn table(rows: &[Vec<String>]) {
     }
 }
 
+/// After a list that stopped at its `-L` limit, say so on stderr (keeps pipes and --json clean).
+/// `noun` is plural ("repositories"); `order` describes the sort ("newest first") or is "".
+pub fn more_note(list: &crate::client::Listing, noun: &str, order: &str) {
+    if list.truncated && !json_mode() {
+        eprintln!("{}", more_text(list.items.len(), list.total, noun, order));
+    }
+}
+
+fn more_text(shown: usize, total: Option<u64>, noun: &str, order: &str) -> String {
+    let what = match total {
+        Some(t) => format!("Showing {shown} of {t} {noun}"),
+        None => format!("Showing the first {shown} {noun}"),
+    };
+    let order = if order.is_empty() { String::new() } else { format!(", {order}") };
+    format!("{what}{order}. Use -L N to see more, or -L 0 for all.")
+}
+
 pub fn open_browser(url: &str) -> Result<()> {
     let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
         ("open", &[])
@@ -76,5 +93,13 @@ mod tests {
         assert_eq!(s(&v, "a.n"), "3");
         assert_eq!(s(&v, "a.missing.deep"), "");
         assert_eq!(short_time("2026-11-19T10:20:30.123+00:00"), "2026-11-19 10:20");
+        assert_eq!(
+            more_text(30, Some(3030), "repositories", "most recently updated first"),
+            "Showing 30 of 3030 repositories, most recently updated first. Use -L N to see more, or -L 0 for all."
+        );
+        assert_eq!(
+            more_text(30, None, "pull requests", ""),
+            "Showing the first 30 pull requests. Use -L N to see more, or -L 0 for all."
+        );
     }
 }

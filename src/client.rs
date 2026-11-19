@@ -90,21 +90,42 @@ impl Client {
 
     /// Follow `next` links, collecting `values` until `limit` items (usize::MAX = everything).
     pub fn paginate(&self, path: &str, limit: usize) -> Result<Vec<Value>> {
-        let mut out = Vec::new();
+        Ok(self.list(path, limit)?.items)
+    }
+
+    /// Like `paginate`, but also reports the API's total count and whether items were left out.
+    pub fn list(&self, path: &str, limit: usize) -> Result<Listing> {
+        let mut out = Listing { items: Vec::new(), total: None, truncated: false };
         let mut next = Some(path.to_string());
         while let Some(p) = next {
             let mut page = self.get(&p)?;
+            out.total = out.total.or(page["size"].as_u64());
             if let Some(vals) = page["values"].as_array_mut() {
-                out.append(vals);
-            }
-            if out.len() >= limit {
-                out.truncate(limit);
-                break;
+                out.items.append(vals);
             }
             next = page["next"].as_str().map(String::from);
+            if out.items.len() >= limit {
+                out.truncated = out.items.len() > limit || next.is_some();
+                out.items.truncate(limit);
+                break;
+            }
         }
         Ok(out)
     }
+}
+
+/// Result of `Client::list`.
+pub struct Listing {
+    pub items: Vec<Value>,
+    /// Total matching items, when the API reports it (`size`).
+    pub total: Option<u64>,
+    /// True when more items exist than were returned.
+    pub truncated: bool,
+}
+
+/// `-L 0` means no limit.
+pub fn limit_or_all(limit: usize) -> usize {
+    if limit == 0 { usize::MAX } else { limit }
 }
 
 /// Percent-encode a value for use in a query string or path segment.
