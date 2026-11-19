@@ -4,6 +4,7 @@ mod browse;
 mod client;
 mod config;
 mod context;
+mod exit;
 mod output;
 mod pipeline;
 mod pr;
@@ -75,6 +76,6 @@ fn main() {
     };
     if let Err(e) = res {
         eprintln!("bb: {e:#}");
-        std::process::exit(1);
+        std::process::exit(exit::code(&e));
     }
 }

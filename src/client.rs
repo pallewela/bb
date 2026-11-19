@@ -23,7 +23,9 @@ fn url(path: &str) -> String {
 impl Client {
     /// Client using stored credentials (env vars, then credentials file).
     pub fn new() -> Result<Client> {
-        Ok(Client::with_creds(&config::load()?.0))
+        // No usable credentials: exit 4, like `gh` when authentication is required.
+        let (creds, _) = config::load().map_err(|e| crate::exit::Exit::new(crate::exit::AUTH_REQUIRED, format!("{e:#}")))?;
+        Ok(Client::with_creds(&creds))
     }
 
     pub fn with_creds(creds: &Creds) -> Client {
