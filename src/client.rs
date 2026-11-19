@@ -123,9 +123,13 @@ pub struct Listing {
     pub truncated: bool,
 }
 
-/// `-L 0` means no limit.
-pub fn limit_or_all(limit: usize) -> usize {
-    if limit == 0 { usize::MAX } else { limit }
+/// Resolve a `-L` flag to (item limit, whether the user gave it). Unset uses `default`; `0` means no limit.
+pub fn limit_arg(limit: Option<usize>, default: usize) -> (usize, bool) {
+    match limit {
+        None => (default, false),
+        Some(0) => (usize::MAX, true),
+        Some(n) => (n, true),
+    }
 }
 
 /// Percent-encode a value for use in a query string or path segment.
@@ -148,5 +152,12 @@ mod tests {
         assert_eq!(url("user"), "https://api.bitbucket.org/2.0/user");
         assert_eq!(url("https://x/y"), "https://x/y");
         assert_eq!(enc("state=\"OPEN\" a/b{1}"), "state%3D%22OPEN%22%20a%2Fb%7B1%7D");
+    }
+
+    #[test]
+    fn limit_args() {
+        assert_eq!(limit_arg(None, 30), (30, false));
+        assert_eq!(limit_arg(Some(5), 30), (5, true));
+        assert_eq!(limit_arg(Some(0), 30), (usize::MAX, true));
     }
 }

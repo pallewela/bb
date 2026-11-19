@@ -1,5 +1,5 @@
 //! `bb pr`: pull requests.
-use crate::client::{enc, limit_or_all, Client};
+use crate::client::{enc, limit_arg, Client};
 use crate::context::{self, Repo};
 use crate::output::{self, s};
 use anyhow::{bail, Result};
@@ -27,9 +27,9 @@ pub enum Cmd {
         /// Filter by source branch
         #[arg(long)]
         head: Option<String>,
-        /// Maximum number of pull requests to list (0 = all)
-        #[arg(short = 'L', long, default_value_t = 30)]
-        limit: usize,
+        /// Maximum number of pull requests to list [default: 30; 0 = all]
+        #[arg(short = 'L', long, value_name = "N")]
+        limit: Option<usize>,
     },
     /// Show a pull request
     View {
@@ -126,7 +126,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
     match cmd {
         Cmd::List { state, author, base, head, limit } => {
             let c = Client::new()?;
-            let limit = limit_or_all(limit);
+            let (limit, chosen) = limit_arg(limit, 30);
             let path = format!("{}/pullrequests?{}", Repo::current()?.api(), list_query(&state, &author, &base, &head, limit));
             let list = c.list(&path, limit)?;
             let prs = &list.items;
@@ -146,7 +146,9 @@ pub fn run(cmd: Cmd) -> Result<()> {
                     ]
                 }));
                 output::table(&rows);
-                output::more_note(&list, "pull requests", "");
+                if !chosen {
+                    output::more_note(&list, "pull requests", "");
+                }
             }
         }
         Cmd::View { p, comments, web } => {
