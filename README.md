@@ -11,7 +11,8 @@ Prebuilt binaries are on the [releases page](https://github.com/pallewela/bb/rel
 
 ## Auth
 
-Create a scoped Atlassian API token (Bitbucket product; repository + pull request + pipeline scopes)
+Create a scoped Atlassian API token (Bitbucket product; repository + pull request + pipeline scopes,
+plus `read:workspace:bitbucket` for `bb workspace list`)
 at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 
     bb auth login                      # prompts, verifies, saves the token to the system keychain
@@ -22,7 +23,8 @@ at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 
 Run inside a clone of a Bitbucket repo, or pass `-R WORKSPACE/REPO`. Add `--json` for raw API JSON.
 
-    bb repo list [WORKSPACE]         bb repo view / clone / create / delete
+    bb workspace list [--admin]      bb repo list [WORKSPACE]
+    bb repo view / clone / create / delete
     bb pr list                       bb pr view [PR] [--comments] [--web]
     bb pr create --fill              bb pr checkout 12
     bb pr diff                       bb pr merge --squash

@@ -53,6 +53,11 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 | `repo create WORKSPACE/REPO [--private/--public] [--description] [--project KEY] [--clone]` | `POST /repositories/{ws}/{slug}` with `scm: git`. Private by default. |
 | `repo delete [REPO] --yes` | `DELETE /repositories/{ws}/{slug}`. Refuses without `--yes`. |
 
+### 5.2a `bb workspace` (alias `bb ws`)
+| Command | API |
+|---|---|
+| `workspace list [--admin] [-L N]` | `GET /user/workspaces?sort=slug` (`administrator=true` with `--admin`). Columns: slug, role (admin/member). Needs the `read:workspace:bitbucket` scope; a 403 explains that. |
+
 ### 5.3 `bb pr`
 `[PR]` argument = numeric id, a PR URL, or omitted → the open PR whose source is the
 current git branch.
@@ -105,6 +110,7 @@ src/output.rs    json mode flag, table printer, JSON field helpers, open-in-brow
 src/auth.rs      bb auth          src/pr.rs        bb pr
 src/repo.rs      bb repo          src/pipeline.rs  bb pipeline
 src/api.rs       bb api           src/browse.rs    bb browse
+src/workspace.rs bb workspace
 ```
 
 Dependencies: `clap` (derive), `ureq` (blocking HTTP, no async runtime), `serde_json`,
