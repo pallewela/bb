@@ -1,7 +1,7 @@
 //! `bb pipeline` (alias `bb run`): list, view, run, stop and read logs of Bitbucket Pipelines.
-use crate::client::{enc, Client};
+use crate::client::{enc, limit_or_all, Client};
 use crate::context::{current_branch, Repo};
-use crate::output::{json_mode, open_browser, print_json, s, short_time, table};
+use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
 use anyhow::{bail, Result};
 use clap::Subcommand;
 use serde_json::{json, Value};
@@ -13,7 +13,7 @@ pub enum Cmd {
         /// Only pipelines for this branch
         #[arg(long)]
         branch: Option<String>,
-        /// Maximum number of pipelines to list
+        /// Maximum number of pipelines to list (0 = all)
         #[arg(short = 'L', long, default_value_t = 30)]
         limit: usize,
     },
@@ -61,17 +61,18 @@ pub fn run(cmd: Cmd) -> Result<()> {
     let base = format!("{}/pipelines", repo.api());
     match cmd {
         Cmd::List { branch, limit } => {
+            let limit = limit_or_all(limit);
             let mut path = format!("{base}/?sort=-created_on&pagelen={}", limit.clamp(1, 100));
             if let Some(b) = branch {
                 path += &format!("&target.ref_name={}", enc(&b));
             }
-            let items = c.paginate(&path, limit)?;
+            let list = c.list(&path, limit)?;
             if json_mode() {
-                print_json(&Value::Array(items));
+                print_json(&Value::Array(list.items));
                 return Ok(());
             }
             let mut rows = vec![["#", "STATUS", "REF", "TRIGGER", "CREATOR", "CREATED"].map(String::from).to_vec()];
-            rows.extend(items.iter().map(|p| {
+            rows.extend(list.items.iter().map(|p| {
                 vec![
                     format!("#{}", s(p, "build_number")),
                     status(p),
@@ -82,6 +83,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 ]
             }));
             table(&rows);
+            more_note(&list, "pipelines", "newest first");
         }
         Cmd::View { id, web } => {
             let p = resolve(&c, &base, &id)?;
