@@ -5,8 +5,10 @@ A `gh`-style CLI for Bitbucket Cloud. Scope and design: [PRD.md](PRD.md).
 ## Install
 
     brew install pallewela/tap/bb      # macOS arm64
+    brew update && brew upgrade pallewela/tap/bb   # upgrade later
     cargo install --path .             # from source
 
+Always use the full name `pallewela/tap/bb` with brew: plain `bb` also matches an unrelated cask.
 Prebuilt binaries are on the [releases page](https://github.com/pallewela/bb/releases).
 
 ## Auth
