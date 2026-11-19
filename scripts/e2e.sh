@@ -40,7 +40,8 @@ TAG="E2E-$RUN_ID"                # unique text in PR titles, for `pr list -S`
 for tool in git jq timeout; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
 done
-command -v "$BB" >/dev/null || { echo "bb not found: $BB (set BB=path/to/bb)" >&2; exit 1; }
+# Absolute path, so the bb() wrapper below doesn't call itself (infinite recursion -> segfault).
+BB="$(command -v "$BB")" || { echo "bb not found (set BB=path/to/bb)" >&2; exit 1; }
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/bb-e2e.XXXXXX")"
 chmod 700 "$TMP"
