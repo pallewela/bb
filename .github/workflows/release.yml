@@ -156,7 +156,9 @@ jobs:
             echo 'brew install pallewela/tap/bb'
             echo '```'
             echo
-            echo 'Upgrading: `brew update && brew upgrade bb`'
+            echo 'Upgrading: `brew update && brew upgrade pallewela/tap/bb`'
+            echo
+            echo 'Use the full name `pallewela/tap/bb` in brew commands: plain `bb` also matches an unrelated cask.'
             echo
             echo "## Manual install (macOS arm64)"
             echo
