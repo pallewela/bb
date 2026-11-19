@@ -1,6 +1,6 @@
 //! Bitbucket Cloud HTTP client. All paths are relative to /2.0 unless they are full URLs.
 use crate::config::{self, Creds};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use base64::Engine;
 use serde_json::Value;
 use std::time::Duration;
@@ -12,7 +12,7 @@ pub struct Client {
     auth: String,
 }
 
-fn url(path: &str) -> String {
+pub fn url(path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         path.to_string()
     } else {
@@ -49,16 +49,34 @@ impl Client {
         };
         match res {
             Ok(r) => Ok(r.into_string()?),
-            Err(ureq::Error::Status(code, r)) => {
-                let text = r.into_string().unwrap_or_default();
-                let msg = serde_json::from_str::<Value>(&text)
-                    .ok()
-                    .and_then(|v| v["error"]["message"].as_str().map(String::from))
-                    .unwrap_or(text);
-                bail!("HTTP {code}: {}", msg.trim())
-            }
+            Err(ureq::Error::Status(code, r)) => Err(status_error(code, &r.into_string().unwrap_or_default())),
             Err(e) => Err(e).context("request failed"),
         }
+    }
+
+    /// Request with extra headers that returns the full response, whatever its status (for `bb api`).
+    pub fn send(&self, method: &str, path: &str, headers: &[(String, String)], body: Option<&Value>) -> Result<Response> {
+        let mut req = self.agent.request(method, &url(path)).set("Authorization", &self.auth);
+        for (k, v) in headers {
+            req = req.set(k, v);
+        }
+        let res = match body {
+            Some(b) => req.send_json(b),
+            None => req.call(),
+        };
+        let r = match res {
+            Ok(r) | Err(ureq::Error::Status(_, r)) => r,
+            Err(e) => return Err(e).context("request failed"),
+        };
+        let mut names = r.headers_names();
+        names.dedup();
+        let headers = names.iter().flat_map(|n| r.all(n).into_iter().map(move |v| (n.clone(), v.to_string()))).collect();
+        Ok(Response {
+            status: r.status(),
+            status_line: format!("{} {} {}", r.http_version(), r.status(), r.status_text()),
+            headers,
+            body: r.into_string()?,
+        })
     }
 
     fn json(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
@@ -112,6 +130,25 @@ impl Client {
         }
         Ok(out)
     }
+}
+
+/// Error for a non-2xx response: `HTTP <code>: <message>`, using the API's error message when there is one.
+pub fn status_error(code: u16, text: &str) -> anyhow::Error {
+    let msg = serde_json::from_str::<Value>(text)
+        .ok()
+        .and_then(|v| v["error"]["message"].as_str().map(String::from))
+        .unwrap_or_else(|| text.to_string());
+    anyhow::anyhow!("HTTP {code}: {}", msg.trim())
+}
+
+/// Result of `Client::send`.
+pub struct Response {
+    pub status: u16,
+    /// e.g. `HTTP/1.1 200 OK`
+    pub status_line: String,
+    /// Lowercased names, in the order received.
+    pub headers: Vec<(String, String)>,
+    pub body: String,
 }
 
 /// Result of `Client::list`.
