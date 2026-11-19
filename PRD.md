@@ -22,18 +22,29 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
   names, short flags included (`-R`, `-L`, `-B/--base`, `-H/--head`, `-b/--body`,
   `-t/--title`, `-w/--web`, ...), and the same positional arguments. Check
   `gh <command> --help` before adding or renaming anything.
-- **Same behaviour.** Same defaults (e.g. `-L 30`), same streams (data on stdout;
-  hints, prompts and errors on stderr), same exit codes, same inference from the
-  current git checkout.
+- **Same behaviour.** Same defaults (e.g. `-L 30` for most lists, `-L 20` for
+  `run list`), same streams (data on stdout; hints, prompts and errors on stderr),
+  same exit codes, same inference from the current git checkout.
+- **Accept what a `gh` user types; keep Bitbucket's words as extras.** Parity is about
+  input, not about renaming Bitbucket. Every command, flag and flag value a `gh` user
+  would type must work, with `gh`'s meaning. Where Bitbucket is more precise, its
+  terms stay as additional names or values; they are never removed to make room for
+  `gh`'s. Example: `pr list --state closed` works as in `gh` (merged *and* declined
+  PRs), while `--state declined` stays as a Bitbucket extra and output still shows
+  `DECLINED`. Likewise `pr close` and `pr decline` are the same command, and
+  `run cancel` and `pipeline stop` are the same command.
 - **Map, don't invent.** A Bitbucket concept that has a `gh` analog takes the `gh` name
-  (Pipelines → `bb run` as well as `bb pipeline`; the PR checks list → `bb pr checks`).
-  A Bitbucket-only concept (e.g. workspaces) gets the shape `gh` uses for similar
-  things: `list` / `view` / `create` / `delete`, `-L`, `--json`, `--web`.
-- **`gh` words for commands, Bitbucket words for data.** Commands and flags use `gh`'s
-  vocabulary; output shows what Bitbucket calls things (workspace, build number).
-- **Deviations are deliberate and recorded.** If Bitbucket's API forces a difference,
-  or a `gh` behaviour cannot be matched, note it and the reason in the command's
-  table in §5. An unrecorded difference from `gh` is a bug.
+  (Pipelines → `bb run` as well as `bb pipeline`; workspaces → `bb org` as well as
+  `bb workspace`; the PR checks list → `bb pr checks`). A Bitbucket-only concept gets
+  the shape `gh` uses for similar things: `list` / `view` / `create` / `delete`, `-L`,
+  `--json`, `--web`.
+- **Bitbucket words for data.** Output shows what Bitbucket calls things (DECLINED,
+  workspace, build number, step), because that is what users see in the web UI.
+- **Deviations are deliberate and recorded.** Every difference from `gh` is listed under
+  "Differences from `gh`" in the command's §5 section, as either an **extra** (a
+  Bitbucket addition `gh` lacks) or a **gap** (a `gh` form `bb` can't or doesn't
+  support yet, with the reason). An unrecorded difference is a bug. Gaps still to
+  close are tracked in [#6](https://github.com/pallewela/bb/issues/6).
 - **Matching `gh` beats extra features.** A feature that would need a command shape
   `gh` doesn't have needs a strong reason; prefer the `gh` form even if it's less
   convenient.
@@ -42,9 +53,12 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 
 - Bitbucket Server / Data Center (different API).
 - Issues (Bitbucket's issue tracker is disabled on most repos; Jira is used instead).
-- Multiple accounts / `auth switch`. OAuth browser login flow, shell completions, aliases, extensions.
+- Multiple accounts / `auth switch` (so no `-u/--user` flags). OAuth browser login flow,
+  shell completions, user-defined aliases (`gh alias`), extensions. Built-in command
+  aliases that `gh` has (`ls`, `co`, `new`) are in scope.
 - `gh`-style `--json field1,field2` + `--jq`. v1 has a plain `--json` (raw API JSON); pipe to `jq`.
-- Interactive prompts/editors beyond `auth login`.
+- Interactive prompts/editors beyond `auth login`. Where `gh` prompts for a missing
+  argument, `bb` uses a sensible default (e.g. the current branch's PR) or errors.
 
 ## 4. Conventions (apply to every command)
 
@@ -56,6 +70,13 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 | Errors | Message on stderr, exit code 1. API errors show `HTTP <code>: <message>`. |
 | Lists | `-L/--limit N` (default 30; `workspace list` 100; `0` = all); pagination followed automatically up to the limit. When `-L` is not given and items are left out, a note on stderr says how many were shown of the total (API `size`) and how to see more; nothing is added to stdout or `--json`. |
 | `--web` | Where offered, opens the resource in the browser instead of printing. |
+
+**Differences from `gh` (all commands)**
+- *Gap:* `--json` prints raw API JSON; `gh`'s `--json FIELDS`, `--jq` and `--template` are a
+  v1 non-goal (§3).
+- *Gap:* `-R` takes `WORKSPACE/REPO` or a bitbucket.org URL; there is no `HOST/` prefix (Cloud only).
+- *Gap:* every failure exits 1. `gh` uses 4 when auth is required, 2 when cancelled and 8 for
+  pending checks; match these (#6).
 
 ## 5. Commands
 
@@ -70,6 +91,13 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 Token verification: `GET /user`; if that 403s (scoped token lacking `read:user`),
 treat the token as valid — a bad token gets 401, so 403 proves it authenticated.
 
+**Differences from `gh`**
+- *Extra:* `auth login --email`. Bitbucket API tokens authenticate as `email:token`, so the email is required.
+- *Gap:* no `auth login -w/--web` (OAuth is a v1 non-goal), `-p/--git-protocol` (git is always SSH,
+  see `repo clone`) or `-s/--scopes` (scopes are chosen when the token is created).
+- *Gap:* no `-u/--user` on `logout`/`token`, and no `auth status -a` (single account, §3).
+- *Gap:* `auth status -t/--show-token` is missing (#6).
+
 ### 5.2 `bb repo`
 | Command | API |
 |---|---|
@@ -79,10 +107,27 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 | `repo create WORKSPACE/REPO [--private/--public] [--description] [--project KEY] [--clone]` | `POST /repositories/{ws}/{slug}` with `scm: git`. Private by default. |
 | `repo delete [REPO] --yes` | `DELETE /repositories/{ws}/{slug}`. Refuses without `--yes`. |
 
+**Differences from `gh`**
+- `repo list [WORKSPACE]` matches `gh repo list [OWNER]`, but with no argument it uses the current
+  repo's workspace rather than "your" repos, because Bitbucket removed the cross-workspace listing.
+- *Extra:* `repo create -p/--project KEY` (Bitbucket projects). `gh repo create -p` doesn't exist, so there's no clash.
+- *Gap:* `repo create` is private by default. `gh` makes you choose `--public`/`--private` or prompts;
+  `bb` doesn't prompt (§3), and private is the safe default.
+- *Gap:* `repo create` needs `WORKSPACE/REPO`; there is no default owner.
+- *Gap:* `repo delete` refuses without `--yes` instead of prompting (§3).
+- *Gap:* `repo clone` is SSH only (API tokens don't work for git over HTTPS); no fork/upstream flags.
+- *Gap:* missing `gh` flags: `repo list --visibility/-l/--fork/--source/--archived`, `repo view -w/-b`,
+  `repo create -c` (#6).
+
 ### 5.2a `bb workspace` (alias `bb ws`)
 | Command | API |
 |---|---|
 | `workspace list [--admin] [-L N]` | `GET /user/workspaces?sort=slug` (`administrator=true` with `--admin`). Columns: slug, role (admin/member). Needs the `read:workspace:bitbucket` scope; a 403 explains that. |
+
+**Differences from `gh`**
+- The `gh` analog is `gh org list`. *Gap:* `bb org list` is not an alias yet, and the default `-L` is
+  100 instead of `gh`'s 30 (#6).
+- *Extra:* `--admin` (Bitbucket's per-workspace admin flag); `workspace`/`ws` as Bitbucket names.
 
 ### 5.3 `bb pr`
 `[PR]` argument = numeric id, a PR URL, or omitted → the open PR whose source is the
@@ -103,6 +148,34 @@ current git branch.
 | `pr comments [PR]` | `GET /{id}/comments` — author, location (if inline), body. |
 | `pr checks [PR]` | `GET /{id}/statuses` — state, name, URL. Exit code 1 if any check FAILED. |
 
+**Differences from `gh`**
+
+PR states map as follows. `gh`'s values must be accepted with `gh`'s meaning; Bitbucket's stay as extras.
+
+| `--state` value | Bitbucket states | |
+|---|---|---|
+| `open` | OPEN | `gh` |
+| `merged` | MERGED | `gh` |
+| `closed` | MERGED, DECLINED, SUPERSEDED | `gh` (`gh`'s `closed` includes merged) |
+| `all` | all four | `gh` |
+| `declined` | DECLINED | *extra* |
+| `superseded` | SUPERSEDED | *extra* |
+
+- *Extra:* `pr decline` is the Bitbucket name for `gh pr close`; both names must work.
+- *Extra:* `pr approve`, `pr unapprove` and `pr request-changes [--undo]` are separate Bitbucket
+  actions. `gh` uses `pr review -a/-r/-c`, which must also work; `unapprove` and `--undo` have no `gh` equivalent.
+- *Extra:* `pr comments` (`gh` only has `pr view --comments`, which `bb` also supports).
+- *Extra:* `pr comment --file/--line` for inline comments.
+- *Extra:* `pr create --close-source-branch`, `pr merge --fast-forward` and `--close-source-branch`
+  (Bitbucket options). `gh pr merge -d/--delete-branch` should map to `close_source_branch`.
+- *Gap:* `pr create --reviewer` needs a UUID or account_id; `gh` takes a handle (#6: resolve nicknames).
+- *Gap:* no labels, assignees or milestones (Bitbucket has none), so `-l`, `-a` and `-m` on
+  `pr create`/`pr list` don't apply.
+- *Gap (bug):* `pr merge -m` means `--message`, but in `gh` `-m` is `--merge`. Fix by switching to `gh`'s
+  `-m/--merge`, `-s/--squash`, `-t/--subject` and `-b/--body` (#6, breaking).
+- *Gap:* `[PR]` doesn't accept a branch name yet, `--state closed` isn't accepted yet, and the
+  remaining missing flags are listed in #6.
+
 ### 5.4 `bb pipeline` (the `gh run` analog; alias `bb run`)
 | Command | API (under `/repositories/{ws}/{slug}/pipelines`) |
 |---|---|
@@ -112,6 +185,15 @@ current git branch.
 | `pipeline stop BUILD_NUMBER\|UUID` | `POST /{uuid}/stopPipeline`. |
 | `pipeline logs BUILD_NUMBER\|UUID [--step NAME\|UUID] [--failed]` | `GET /{uuid}/steps/{step}/log` — default: all steps in order; `--failed`: only failed steps. |
 
+**Differences from `gh`**
+- *Extra:* `pipeline` is the Bitbucket name; `run` is the `gh` name, and both work.
+- *Extra:* `pipeline logs`. `gh`'s form, `run view --log / --log-failed / -j`, must also work (#6).
+- *Extra:* `pipeline stop` is the Bitbucket name for `gh run cancel`; both must work (#6).
+- *Extra:* `pipeline run --branch/--pipeline/--var`. Triggering a run is `gh workflow run NAME --ref B -f k=v`
+  in `gh`, and that form (custom pipeline = workflow) must also work (#6).
+- *Gap:* `run watch`, `run rerun` (if the API supports re-runs), `run list` filters (`-s`, `-u`,
+  `-c`, `-w`, `-e`), `-b` for `--branch`, the default `-L 20`, and `run view` without an ID (#6).
+
 ### 5.5 `bb api`
 `bb api PATH [-X METHOD] [-f key=value…] [--input FILE|-] [--paginate]`
 
@@ -119,9 +201,21 @@ Authenticated raw request. `PATH` is relative to `/2.0` or a full URL. `-f` buil
 JSON object body (and implies POST if `-X` is absent). `--paginate` follows `next`
 links and prints the concatenated `values` array. Output is the response body, pretty-printed if JSON.
 
+**Differences from `gh`**
+- `-f key=value` matches `gh api -f/--raw-field` (string values).
+- *Gap:* `--paginate` prints one combined `values` array, which is closer to `gh api --paginate --slurp`,
+  because Bitbucket pages are objects that wrap `values`. Keep and document this, or add `--slurp` (#6).
+- *Gap:* missing `-F/--field` (typed values, `@file`), `-H/--header`, `-i/--include`, `--silent` and
+  `--verbose` (#6). `--jq` and `--cache` are out of scope (§3).
+
 ### 5.6 `bb browse`
 `bb browse [PATH] [--branch B] [--no-browser]` — open the repo (or a file/dir in it)
 on bitbucket.org; `--no-browser` prints the URL.
+
+**Differences from `gh`**
+- *Gap:* missing `-n` for `--no-browser`, a PR number as the argument, `-c/--commit`, `--blame`,
+  `-s/--settings`, `-a/--actions` (→ Pipelines) and `-w/--wiki` (#6). `-p/--projects` and
+  `-r/--releases` have no Bitbucket equivalent.
 
 ## 6. Architecture
 
