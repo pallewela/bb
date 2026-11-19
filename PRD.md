@@ -84,7 +84,7 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 | Command | Behaviour |
 |---|---|
 | `auth login [--insecure-storage]` | Prompt for email + API token (or `--email`, `--with-token` reading token from stdin). Verify against the API, then save (keychain by default; replaces any previous login). Reports where the token was stored. |
-| `auth status` | Show where creds come from (env / keychain / plaintext file), the account if readable, and whether the token works. |
+| `auth status [-t/--show-token]` | Show where creds come from (env / keychain / plaintext file), the account if readable, and whether the token works. `-t` also prints the token. |
 | `auth logout` | Delete the saved login: keychain entry and `hosts.json`. |
 | `auth token` | Print the token (for scripting). |
 
@@ -96,15 +96,14 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 - *Gap:* no `auth login -w/--web` (OAuth is a v1 non-goal), `-p/--git-protocol` (git is always SSH,
   see `repo clone`) or `-s/--scopes` (scopes are chosen when the token is created).
 - *Gap:* no `-u/--user` on `logout`/`token`, and no `auth status -a` (single account, §3).
-- *Gap:* `auth status -t/--show-token` is missing (#6).
 
 ### 5.2 `bb repo`
 | Command | API |
 |---|---|
-| `repo list [WORKSPACE]` | `GET /repositories/{ws}`. No workspace: the current repo's workspace (Bitbucket removed cross-workspace listing). Columns: full name, visibility, language, updated. |
-| `repo view [REPO] [--web]` | `GET /repositories/{ws}/{slug}` — name, description, main branch, visibility, clone URLs, web URL. |
+| `repo list [WORKSPACE] [--visibility public\|private] [-l LANG] [--fork\|--source] [-L N]` (alias `ls`) | `GET /repositories/{ws}?q=…`. No workspace: the current repo's workspace (Bitbucket removed cross-workspace listing). Filters run server-side: `is_private`, `language` (lowercased; Bitbucket stores and compares languages in lowercase), `parent != null` / `parent = null`. Columns: full name, visibility, language, updated. |
+| `repo view [REPO] [-w/--web] [-b/--branch B]` | `GET /repositories/{ws}/{slug}` — name, description, main branch, visibility, clone URLs, web URL. `-b` adds `GET …/refs/branches/{B}`: the branch, its head commit, and its URL (`--json` still prints the repository). `-w -b B` opens `/src/B/`. |
 | `repo clone WORKSPACE/REPO [DIR] [-- git args]` | `git clone git@bitbucket.org:ws/repo.git` (SSH: API tokens don't work for git-over-HTTPS). |
-| `repo create WORKSPACE/REPO [--private/--public] [--description] [--project KEY] [--clone]` | `POST /repositories/{ws}/{slug}` with `scm: git`. Private by default. |
+| `repo create WORKSPACE/REPO [--private/--public] [-d/--description] [-p/--project KEY] [-c/--clone]` (alias `new`) | `POST /repositories/{ws}/{slug}` with `scm: git`. Private by default. |
 | `repo delete [REPO] --yes` | `DELETE /repositories/{ws}/{slug}`. Refuses without `--yes`. |
 
 **Differences from `gh`**
@@ -116,17 +115,18 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 - *Gap:* `repo create` needs `WORKSPACE/REPO`; there is no default owner.
 - *Gap:* `repo delete` refuses without `--yes` instead of prompting (§3).
 - *Gap:* `repo clone` is SSH only (API tokens don't work for git over HTTPS); no fork/upstream flags.
-- *Gap:* missing `gh` flags: `repo list --visibility/-l/--fork/--source/--archived`, `repo view -w/-b`,
-  `repo create -c` (#6).
+- *Gap:* `repo list --archived`/`--no-archived`: Bitbucket repositories have no archived flag (the API
+  has no such field, and `q` filtering on `archived`/`is_archived` is rejected).
+- *Gap:* `repo list --visibility internal` (no internal visibility on Bitbucket) and `--topic` (no topics).
+- *Gap:* `repo view -b` shows the branch's head commit rather than its README (`bb repo view` shows no README).
 
-### 5.2a `bb workspace` (alias `bb ws`)
+### 5.2a `bb workspace` (aliases `bb org`, `bb ws`)
 | Command | API |
 |---|---|
-| `workspace list [--admin] [-L N]` | `GET /user/workspaces?sort=slug` (`administrator=true` with `--admin`). Columns: slug, role (admin/member). Needs the `read:workspace:bitbucket` scope; a 403 explains that. |
+| `workspace list [--admin] [-L N]` (alias `ls`) | `GET /user/workspaces?sort=slug` (`administrator=true` with `--admin`). Default `-L 30`. Columns: slug, role (admin/member). Needs the `read:workspace:bitbucket` scope; a 403 explains that. |
 
 **Differences from `gh`**
-- The `gh` analog is `gh org list`. *Gap:* `bb org list` is not an alias yet, and the default `-L` is
-  100 instead of `gh`'s 30 (#6).
+- The `gh` analog is `gh org list`; `bb org list` / `bb org ls` work the same way.
 - *Extra:* `--admin` (Bitbucket's per-workspace admin flag); `workspace`/`ws` as Bitbucket names.
 
 ### 5.3 `bb pr`
@@ -195,27 +195,41 @@ PR states map as follows. `gh`'s values must be accepted with `gh`'s meaning; Bi
   `-c`, `-w`, `-e`), `-b` for `--branch`, the default `-L 20`, and `run view` without an ID (#6).
 
 ### 5.5 `bb api`
-`bb api PATH [-X METHOD] [-f key=value…] [--input FILE|-] [--paginate]`
+`bb api PATH [-X METHOD] [-f/--raw-field key=value…] [-F/--field key=value…] [-H/--header key:value…] [--input FILE|-] [-i/--include] [--silent] [--verbose] [--paginate]`
 
-Authenticated raw request. `PATH` is relative to `/2.0` or a full URL. `-f` builds a
-JSON object body (and implies POST if `-X` is absent). `--paginate` follows `next`
-links and prints the concatenated `values` array. Output is the response body, pretty-printed if JSON.
+Authenticated raw request. `PATH` is relative to `/2.0` or a full URL. As in `gh api`:
+`-f` adds a string field; `-F` adds a typed field (`true`, `false`, `null` and integers become
+JSON values, `@FILE` reads the value from a file and `@-` from stdin). Fields build a JSON object
+body and imply POST if `-X` is absent; with `-X GET`, or when `--input` supplies the body, they go
+in the query string instead. `-H` adds request headers. `-i` prints the status line and response
+headers before the body; `--silent` drops the body; `--verbose` prints the request and response
+headers (and the request body) to stderr, never the Authorization header. Output is the response
+body, pretty-printed if JSON; on a non-2xx status the body is still printed, then
+`HTTP <code>: <message>` goes to stderr and the exit code is 1. `--paginate` follows `next` links
+and prints the concatenated `values` array.
 
 **Differences from `gh`**
-- `-f key=value` matches `gh api -f/--raw-field` (string values).
 - *Gap:* `--paginate` prints one combined `values` array, which is closer to `gh api --paginate --slurp`,
   because Bitbucket pages are objects that wrap `values`. Keep and document this, or add `--slurp` (#6).
-- *Gap:* missing `-F/--field` (typed values, `@file`), `-H/--header`, `-i/--include`, `--silent` and
-  `--verbose` (#6). `--jq` and `--cache` are out of scope (§3).
+  `--paginate` can't be combined with `-H`, `-i` or `--verbose`.
+- *Gap:* no nested field syntax (`key[sub]=v`, `key[]=v`) and no `{owner}`/`{repo}`/`{branch}`
+  placeholders; use `--input` for nested bodies. `--input` must be JSON.
+- *Gap:* `-i`/`--verbose` show HTTP/1.1 and lowercased header names (as received).
+- `--jq`, `--template`, `--cache`, `-p/--preview` and `--hostname` are out of scope (§3; Cloud only).
 
 ### 5.6 `bb browse`
-`bb browse [PATH] [--branch B] [--no-browser]` — open the repo (or a file/dir in it)
-on bitbucket.org; `--no-browser` prints the URL.
+`bb browse [NUMBER|PATH|SHA] [-b/--branch B] [-c/--commit[=SHA]] [--blame] [-s/--settings] [-a/--actions] [-w/--wiki] [-n/--no-browser]`
+— open the repo on bitbucket.org; `-n` prints the URL instead. As in `gh browse`, the argument is
+a PR if it's a number (`/pull-requests/N`), a commit if it's 7 to 40 lowercase hex characters
+(`/commits/SHA`), and otherwise a file/dir path (`/src/REV/PATH`, with `PATH:LINE` or
+`PATH:START-END` → `#lines-N` / `#lines-START:END`). REV is `--commit` (no SHA: the last commit —
+local HEAD in the checkout, else the main branch's head), else `--branch`, else the current
+branch in the checkout, else the main branch. `--blame` opens `/annotate/REV/PATH`. `-s` opens
+`/admin`, `-a` the Pipelines page (`/pipelines`), `-w` `/wiki`.
 
 **Differences from `gh`**
-- *Gap:* missing `-n` for `--no-browser`, a PR number as the argument, `-c/--commit`, `--blame`,
-  `-s/--settings`, `-a/--actions` (→ Pipelines) and `-w/--wiki` (#6). `-p/--projects` and
-  `-r/--releases` have no Bitbucket equivalent.
+- *Gap:* `-p/--projects` and `-r/--releases` have no Bitbucket equivalent.
+- *Gap:* `--commit` and `--branch` can't be combined (in `gh`, `--commit` wins).
 
 ## 6. Architecture
 
