@@ -1,5 +1,5 @@
 //! `bb workspace`: list the workspaces the caller can access.
-use crate::client::{limit_or_all, Client};
+use crate::client::{limit_arg, Client};
 use crate::output::{json_mode, more_note, print_json, s, table};
 use anyhow::Result;
 use clap::Subcommand;
@@ -12,9 +12,9 @@ pub enum Cmd {
         /// Only workspaces you administer
         #[arg(long)]
         admin: bool,
-        /// Maximum number of workspaces to list (0 = all)
-        #[arg(short = 'L', long, default_value_t = 100)]
-        limit: usize,
+        /// Maximum number of workspaces to list [default: 100; 0 = all]
+        #[arg(short = 'L', long, value_name = "N")]
+        limit: Option<usize>,
     },
 }
 
@@ -26,7 +26,7 @@ fn list_path(admin: bool, limit: usize) -> String {
 pub fn run(cmd: Cmd) -> Result<()> {
     match cmd {
         Cmd::List { admin, limit } => {
-            let limit = limit_or_all(limit);
+            let (limit, chosen) = limit_arg(limit, 100);
             let list = Client::new()?.list(&list_path(admin, limit), limit).map_err(|e| {
                 if e.to_string().starts_with("HTTP 403") {
                     e.context("listing workspaces needs the read:workspace:bitbucket scope; create a token with it and run `bb auth login`")
@@ -44,7 +44,9 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 rows.push(vec![s(w, "workspace.slug"), role.into()]);
             }
             table(&rows);
-            more_note(&list, "workspaces", "sorted by slug");
+            if !chosen {
+                more_note(&list, "workspaces", "sorted by slug");
+            }
         }
     }
     Ok(())
