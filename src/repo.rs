@@ -1,5 +1,5 @@
 //! `bb repo`: list, view, clone, create, delete.
-use crate::client::{enc, limit_or_all, Client};
+use crate::client::{enc, limit_arg, Client};
 use crate::context::{git_passthrough, Repo};
 use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
 use anyhow::{bail, Result};
@@ -11,9 +11,9 @@ pub enum Cmd {
     /// List repositories in a workspace (default: the current repo's workspace)
     List {
         workspace: Option<String>,
-        /// Maximum number of repositories to list (0 = all)
-        #[arg(short = 'L', long, default_value_t = 30)]
-        limit: usize,
+        /// Maximum number of repositories to list [default: 30; 0 = all]
+        #[arg(short = 'L', long, value_name = "N")]
+        limit: Option<usize>,
     },
     /// Show a repository
     View {
@@ -88,7 +88,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
                     anyhow::anyhow!("specify a workspace: `bb repo list WORKSPACE` (or run inside a Bitbucket repo)")
                 })?,
             };
-            let limit = limit_or_all(limit);
+            let (limit, chosen) = limit_arg(limit, 30);
             let list = Client::new()?.list(&list_path(&ws, limit), limit)?;
             if json_mode() {
                 print_json(&Value::Array(list.items));
@@ -100,7 +100,9 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 rows.push(vec![s(r, "full_name"), vis.into(), s(r, "language"), short_time(&s(r, "updated_on"))]);
             }
             table(&rows);
-            more_note(&list, "repositories", "most recently updated first");
+            if !chosen {
+                more_note(&list, "repositories", "most recently updated first");
+            }
         }
         Cmd::View { repo, web } => {
             let repo = resolve(repo)?;

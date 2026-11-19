@@ -22,7 +22,7 @@ at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 ## Usage
 
 Run inside a clone of a Bitbucket repo, or pass `-R WORKSPACE/REPO`. Add `--json` for raw API JSON.
-List commands show 30 items by default (and say so when there are more); use `-L N` for more or `-L 0` for all.
+List commands show 30 items by default and say so when there are more; use `-L N` to choose how many, or `-L 0` for all.
 
     bb workspace list [--admin]      bb repo list [WORKSPACE]
     bb repo view / clone / create / delete

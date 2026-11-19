@@ -1,5 +1,5 @@
 //! `bb pipeline` (alias `bb run`): list, view, run, stop and read logs of Bitbucket Pipelines.
-use crate::client::{enc, limit_or_all, Client};
+use crate::client::{enc, limit_arg, Client};
 use crate::context::{current_branch, Repo};
 use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
 use anyhow::{bail, Result};
@@ -13,9 +13,9 @@ pub enum Cmd {
         /// Only pipelines for this branch
         #[arg(long)]
         branch: Option<String>,
-        /// Maximum number of pipelines to list (0 = all)
-        #[arg(short = 'L', long, default_value_t = 30)]
-        limit: usize,
+        /// Maximum number of pipelines to list [default: 30; 0 = all]
+        #[arg(short = 'L', long, value_name = "N")]
+        limit: Option<usize>,
     },
     /// Show a pipeline and its steps
     View {
@@ -61,7 +61,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
     let base = format!("{}/pipelines", repo.api());
     match cmd {
         Cmd::List { branch, limit } => {
-            let limit = limit_or_all(limit);
+            let (limit, chosen) = limit_arg(limit, 30);
             let mut path = format!("{base}/?sort=-created_on&pagelen={}", limit.clamp(1, 100));
             if let Some(b) = branch {
                 path += &format!("&target.ref_name={}", enc(&b));
@@ -83,7 +83,9 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 ]
             }));
             table(&rows);
-            more_note(&list, "pipelines", "newest first");
+            if !chosen {
+                more_note(&list, "pipelines", "newest first");
+            }
         }
         Cmd::View { id, web } => {
             let p = resolve(&c, &base, &id)?;
