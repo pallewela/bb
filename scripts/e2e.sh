@@ -24,6 +24,7 @@
 #   BB=target/debug/bb scripts/e2e.sh  # test a development build
 #   KEEP=1 scripts/e2e.sh              # keep the test repository afterwards
 #   VERBOSE=1 scripts/e2e.sh           # print each command before running it
+#   VERBOSE=10 scripts/e2e.sh          # ...and its exit code, stdout and stderr
 #
 # Exit status: 0 if every assert passed, 1 otherwise.
 
@@ -89,6 +90,13 @@ t() {
   OUT="$("$@" 2>"$ERRF")"
   RC=$?
   ERR="$(cat "$ERRF")"
+  if [ "${VERBOSE:-0}" -ge 10 ] 2>/dev/null; then
+    local o="$OUT" e="$ERR"
+    if [ -n "$TOKEN" ]; then o="${o//"$TOKEN"/<token>}"; e="${e//"$TOKEN"/<token>}"; fi
+    printf '  \033[2m  exit: %s\033[0m\n' "$RC"
+    [ -n "$o" ] && printf '%s\n' "$o" | sed $'s/^/  \033[2m  out: /; s/$/\033[0m/'
+    [ -n "$e" ] && printf '%s\n' "$e" | sed $'s/^/  \033[2m  err: /; s/$/\033[0m/'
+  fi
 }
 
 # Run a command in another directory (bb finds the repository from the cwd's git remote).
