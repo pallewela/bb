@@ -18,7 +18,8 @@ plus `read:workspace:bitbucket` for `bb org list` and `read:user` for `bb pr com
 at https://id.atlassian.com/manage-profile/security/api-tokens, then either:
 
     bb auth login                      # prompts, verifies, saves the token to the system keychain
-    bb auth login --insecure-storage   # ...or in plaintext in ~/.config/bb/hosts.json (0600)
+    bb auth login --insecure-storage   # ...or in plaintext in ~/.config/bb/hosts.json (0600;
+                                       #    %APPDATA%\bb\hosts.json on Windows)
     export BITBUCKET_EMAIL=... BITBUCKET_TOKEN=...   # or use env vars (take precedence)
 
 ## Usage

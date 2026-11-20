@@ -81,7 +81,8 @@ pub fn open_browser(url: &str) -> Result<()> {
     let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
         ("open", &[])
     } else if cfg!(windows) {
-        ("cmd", &["/c", "start", ""])
+        // Not `cmd /c start`: cmd treats `&` in the URL (e.g. `?state=OPEN&...`) as a command separator.
+        ("rundll32", &["url.dll,FileProtocolHandler"])
     } else {
         ("xdg-open", &[])
     };

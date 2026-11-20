@@ -7,7 +7,7 @@ name: CI & Release
 #   - "[skip release]" in the head commit message skips the release.
 #   - the Homebrew tap (pallewela/homebrew-tap) is bumped via
 #     repository_dispatch when the TAP_REPO_TOKEN secret is set.
-# Pull requests run the test job only.
+# Pull requests run the test job only (on macOS, Linux and Windows).
 
 on:
   push:
@@ -28,10 +28,18 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # The macOS name is a required status check (ruleset "Protect main"); keep the names stable.
   test:
-    name: Build & Test (macOS arm64)
-    runs-on: macos-latest
+    name: Build & Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS arm64, os: macos-latest }
+          - { name: Linux x86_64, os: ubuntu-latest }
+          - { name: Windows x86_64, os: windows-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
