@@ -274,6 +274,28 @@ branch in the checkout, else the main branch. `--blame` opens `/annotate/REV/PAT
 - *Gap:* `-p/--projects` and `-r/--releases` have no Bitbucket equivalent.
 - *Gap:* `--commit` and `--branch` can't be combined (in `gh`, `--commit` wins).
 
+### 5.7 Agent skill (`skills/bitbucket-cli/SKILL.md`)
+
+An agent skill that teaches AI coding agents to use `bb` safely. It adds no new commands; it
+documents how agents should use the ones above:
+- **Rules:** read with `--json` + `jq`; write only when the user asked for that action; pass the PR
+  id explicitly for every write (branch resolution, §5.3, can pick a merged PR); match branches
+  exactly; confirm list results with `pr view` before acting (Bitbucket's PR list can lag after a
+  write: a PR merged seconds ago may still be listed as open); no prompts, `--web` or `bb browse`;
+  `-L 0` when completeness matters; never print the token.
+- **Exit codes:** what 1, 2, 4 and 8 mean to an agent, including that `pr checks --json` still
+  prints a JSON array when it exits 1 for a failed check.
+- **Reference:** read-only vs write commands, and the JSON fields agents need.
+- **Workflows** as shell functions in ```` ```bash ```` blocks that start with `# recipe: NAME`:
+  `bb_pr_is_open`, `bb_pr_for_branch`, `bb_checks_state`, `bb_pr_summary`, `bb_failed_logs`, `bb_ensure_pr`,
+  `bb_upsert_comment`, `bb_safe_merge`. The tests (§7) run these blocks exactly as written.
+
+**The skill is part of `bb`'s interface.** Any change to a command, flag, flag value, default,
+`--json` output shape, exit code or PR/pipeline resolution rule that the skill mentions must update
+SKILL.md in the same change, along with `tests/skill/mock-bb` and its fixture when the mock
+imitates the changed behavior. New commands or flags that agents would use (especially writes)
+should get a line in the skill's command lists, and a recipe and tests if they need a safety check.
+
 ## 6. Architecture
 
 Single crate, one module per command group, thin shared core.
@@ -288,6 +310,12 @@ src/auth.rs      bb auth          src/pr.rs        bb pr
 src/repo.rs      bb repo          src/pipeline.rs  bb pipeline
 src/api.rs       bb api           src/browse.rs    bb browse
 src/workspace.rs bb workspace    src/exit.rs      exit codes (gh's 1/4/8)
+
+skills/bitbucket-cli/SKILL.md   agent skill (§5.7)
+tests/skill/run.sh              skill recipe tests; mock-bb = fake bb, fixtures/ = its data
+tests/skill_recipes.rs          runs tests/skill/run.sh under `cargo test`
+scripts/e2e.sh                  live test of every command; scripts/skill-e2e.sh: the skill's recipes
+scripts/skill-eval.sh           agent eval: Claude Code + the skill against the mock (opt-in, paid)
 ```
 
 Dependencies: `clap` (derive), `ureq` (blocking HTTP, no async runtime), `serde_json`,
@@ -299,6 +327,13 @@ layer; Bitbucket payloads are large and we read a handful of fields.
 - `cargo build` warning-free; `cargo test` green.
 - Unit tests for pure logic: remote-URL parsing, PR-argument parsing, query building, `-f` body building.
 - No network in tests. Live verification is a manual read-only smoke test.
+- The agent skill's recipes pass against the mock (`tests/skill/run.sh`, part of `cargo test`),
+  and the real `bb` accepts every command line they run. That replay catches renamed or removed
+  flags, but not changed semantics or output. So a PR that changes `bb`'s behavior also updates
+  SKILL.md and the mock (§5.7), and reviewers check for it.
+- Changes to SKILL.md's rules or workflows are checked with `scripts/skill-eval.sh`: Claude Code
+  given realistic requests must pick the right PR and make only the expected writes. It is not
+  deterministic and costs API usage, so it is run by hand (`RUNS=3` or more), not in CI.
 
 ## 8. Milestones
 

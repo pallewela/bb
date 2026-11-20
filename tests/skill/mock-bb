@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+# A fake `bb` for testing the agent skill (skills/bitbucket-cli/SKILL.md) without Bitbucket.
+#
+# It answers read commands from a fixture file and pretends to succeed on writes. Every call
+# is appended to $BB_MOCK_LOG as one line: "READ<TAB>args" or "WRITE<TAB>args" (args are
+# shell-quoted with printf %q), so tests can assert which commands an agent ran.
+#
+#   BB_MOCK_FIXTURE  JSON file with the fake repository state (see fixtures/repo.json)
+#   BB_MOCK_LOG      file to append the call log to
+#   BB_MOCK_REAL     optional path to the real bb, used to answer --help
+#   BB_MOCK_STATEFUL =1: merge/close/create change BB_MOCK_FIXTURE (give it a copy), so later
+#                    reads see the result, as on Bitbucket
+#
+# Fixture keys: logged_in (bool), me, prs[], list_prs[] (what `pr list` sees, if it differs from
+# `pr view`: Bitbucket's list lags after writes), statuses{ID: [...]}, statuses_after_watch{ID: [...]},
+# comments{ID: [...]}, diffstat{ID: [paths]}, pipelines[] (newest first), logs{BUILD: text}.
+# Only the flags the skill's recipes use are implemented; output follows the real `bb --json`.
+set -u
+FIX="${BB_MOCK_FIXTURE:?BB_MOCK_FIXTURE not set}"
+LOG="${BB_MOCK_LOG:?BB_MOCK_LOG not set}"
+
+die() { echo "bb: $1" >&2; exit "${2:-1}"; }
+fx() { jq "$@" "$FIX"; }
+
+# Strip the global flags (--json, -R/--repo VALUE) wherever they appear.
+JSON=""
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json) JSON=1 ;;
+    -R|--repo) shift ;;
+    -R=*|--repo=*) ;;
+    *) ARGS+=("$1") ;;
+  esac
+  shift
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+
+# ---- help: answered by the real bb (BB_MOCK_REAL) if given, logged as a read ------------------
+for a in "$@"; do
+  case "$a" in
+    -h|--help|--version|-V|help)
+      { printf 'READ\t'; printf '%q ' bb "$@"; echo; } >>"$LOG"
+      if [ -n "${BB_MOCK_REAL:-}" ]; then exec "$BB_MOCK_REAL" "$@"; fi
+      echo "bb (mock): no help available"; exit 0 ;;
+  esac
+done
+
+# ---- classify and log -------------------------------------------------------------------------
+has() { local f; for f in "${ARGS[@]+"${ARGS[@]}"}"; do [ "$f" = "$1" ] && return 0; done; return 1; }
+kind=WRITE
+case "${1:-} ${2:-}" in
+  "pr list"|"pr ls"|"pr view"|"pr diff"|"pr checks"|"pr comments"|"pr status") kind=READ ;;
+  "pr create"|"pr new") has --dry-run && kind=READ ;;
+  "run list"|"run ls"|"run view"|"run watch"|"run logs"|"pipeline list"|"pipeline ls"|"pipeline view"|"pipeline watch"|"pipeline logs") kind=READ ;;
+  "repo view"|"repo list"|"repo ls"|"org list"|"workspace list"|"auth status") kind=READ ;;
+  api\ *)
+    kind=READ
+    for f in -X --method -f --raw-field -F --field --input; do has "$f" && kind=WRITE; done
+    if has -X; then for ((i = 0; i < ${#ARGS[@]}; i++)); do
+      [ "${ARGS[$i]}" = -X ] && [ "${ARGS[$((i + 1))]:-}" = GET ] && kind=READ
+    done; fi ;;
+esac
+{ printf '%s\t' "$kind"; printf '%q ' bb ${JSON:+--json} "$@"; echo; } >>"$LOG"
+
+[ "$(fx -r '.logged_in')" = false ] && die "not logged in: run \`bb auth login\` or set BITBUCKET_EMAIL and BITBUCKET_TOKEN" 4
+
+# ---- option parsing ---------------------------------------------------------------------------
+# parse "VALUE_FLAGS" ARGS...: sets POS (the first positional) and REST (the args, for opt).
+POS=""
+REST=()
+parse() {
+  local valued=" $1 " a; shift
+  REST=("$@")
+  while [ $# -gt 0 ]; do
+    a="$1"
+    if [[ "$valued" == *" $a "* ]]; then shift
+    elif [[ "$a" != -* && -z "$POS" ]]; then POS="$a"
+    fi
+    shift
+  done
+}
+# opt FLAG...: the value after the first of FLAG... in REST (empty if absent).
+opt() {
+  local i k
+  for ((i = 0; i < ${#REST[@]}; i++)); do
+    for k in "$@"; do [ "${REST[$i]}" = "$k" ] && { printf '%s' "${REST[$((i + 1))]:-}"; return; }; done
+  done
+}
+out() { if [ -n "$JSON" ]; then jq .; else jq -r "$1"; fi; }
+
+# A PR by id, or (like real bb) by branch: its open PR, else the most recently updated one.
+pr_json() {
+  local ref="${1#\#}"
+  if [[ "$ref" =~ ^[0-9]+$ ]]; then
+    fx -e --argjson id "$ref" '.prs[] | select(.id == $id)' 2>/dev/null || die "HTTP 404: Pull request $ref not found"
+  else
+    fx -e --arg b "$ref" '[.prs[] | select(.source.branch.name == $b)] | sort_by(.updated_on) | reverse
+      | (map(select(.state == "OPEN")) + .)[0] // empty' 2>/dev/null || die "no pull requests found for branch \`$ref\`"
+  fi
+}
+pr_id() { local pr; pr="$(pr_json "$1")" || exit; jq -r .id <<<"$pr"; }
+
+checks_exit() {
+  local failed pending
+  failed="$(jq '[.[] | select(.state == "FAILED" or .state == "STOPPED")] | length' <<<"$1")"
+  pending="$(jq '[.[] | select(.state == "INPROGRESS")] | length' <<<"$1")"
+  [ "$failed" -gt 0 ] && die "$failed check(s) failed"
+  [ "$pending" -gt 0 ] && die "$pending check(s) pending" 8
+  exit 0
+}
+
+# ---- reads ------------------------------------------------------------------------------------
+case "${1:-} ${2:-}" in
+  "pr list"|"pr ls")
+    shift 2; parse "-s --state -A --author -B --base -H --head -S --search -L --limit" "$@"
+    state="$(opt -s --state)"; limit="$(opt -L --limit)"
+    fx --arg st "${state:-open}" --arg a "$(opt -A --author)" --arg base "$(opt -B --base)" \
+      --arg head "$(opt -H --head)" --arg q "$(opt -S --search)" --argjson lim "${limit:-30}" '
+      ({open: ["OPEN"], merged: ["MERGED"], declined: ["DECLINED"], superseded: ["SUPERSEDED"],
+        closed: ["MERGED", "DECLINED", "SUPERSEDED"], all: ["OPEN", "MERGED", "DECLINED", "SUPERSEDED"]}[$st]) as $states
+      | [(.list_prs // .prs)[] | select(.state as $s | $states | index($s))
+        | select($a == "" or .author.username == $a)
+        | select($base == "" or .destination.branch.name == $base)
+        | select($head == "" or .source.branch.name == $head)
+        | select($q == "" or (.title + " " + (.description // "") | ascii_downcase | contains($q | ascii_downcase)))]
+      | if $lim > 0 then .[:$lim] else . end' |
+      out '.[] | "#\(.id)\t\(.title)\t\(.source.branch.name)\t\(.author.display_name)\t\(.state)"'
+    exit 0 ;;
+  "pr view")
+    shift 2; parse "" "$@"
+    pr="$(pr_json "${POS:-$(git branch --show-current)}")" || exit
+    out '"\(.title) #\(.id)\n\(.state) • \(.author.display_name) • \(.source.branch.name) → \(.destination.branch.name)\n\(.links.html.href)"' <<<"$pr"
+    exit 0 ;;
+  "pr checks")
+    shift 2; parse "-i --interval" "$@"
+    id="$(pr_id "${POS:-$(git branch --show-current)}")" || exit
+    key=statuses; has --watch && key=statuses_after_watch
+    list="$(fx --arg id "$id" --arg k "$key" '.[$k][$id] // .statuses[$id] // []')"
+    out '.[] | "\(.state)\t\(.name)\t\(.url)"' <<<"$list"
+    checks_exit "$list" ;;
+  "pr comments")
+    shift 2; parse "" "$@"
+    id="$(pr_id "${POS:-$(git branch --show-current)}")" || exit
+    fx --arg id "$id" '.comments[$id] // []' | out '.[] | "\(.user.display_name)\n\(.content.raw)\n"'
+    exit 0 ;;
+  "pr diff")
+    shift 2; parse "-e --exclude --color" "$@"
+    id="$(pr_id "${POS:-$(git branch --show-current)}")" || exit
+    if has --name-only; then fx -r --arg id "$id" '.diffstat[$id] // [] | .[]'
+    else fx -r --arg id "$id" '.diffstat[$id] // [] | .[] | "diff --git a/\(.) b/\(.)"'; fi
+    exit 0 ;;
+  "pr create"|"pr new")
+    if [ "$kind" = READ ]; then
+      shift 2; parse "-t --title -b --body -F --body-file -B --base -H --head -r --reviewer" "$@"
+      echo "Would create pull request in acme/widgets: $(opt -H --head) → $(opt -B --base)"
+      echo "title: $(opt -t --title)"
+      exit 0
+    fi ;;
+  "run list"|"run ls"|"pipeline list"|"pipeline ls")
+    shift 2; parse "-b --branch -s --status -u --user -c --commit -w --workflow -e --event -L --limit" "$@"
+    limit="$(opt -L --limit)"; st="$(opt -s --status)"
+    fx --arg b "$(opt -b --branch)" --arg st "$st" --argjson lim "${limit:-20}" '
+      [.pipelines[] | select($b == "" or .target.ref_name == $b)
+        | select($st == "" or ($st == "failure" and .state.result.name == "FAILED") or ($st == "success" and .state.result.name == "SUCCESSFUL"))]
+      | if $lim > 0 then .[:$lim] else . end' |
+      out '.[] | "#\(.build_number)\t\(.state.result.name // .state.name)\t\(.target.ref_name)"'
+    exit 0 ;;
+  "run view"|"pipeline view")
+    shift 2; parse "-j --job" "$@"
+    p="$(fx -e --arg n "${POS#\#}" '.pipelines[] | select((.build_number | tostring) == $n)' 2>/dev/null)" ||
+      die "HTTP 404: pipeline ${POS:-} not found"
+    if has --log-failed || has --log; then fx -r --arg n "${POS#\#}" '.logs[$n] // ""'
+    elif [ -n "$JSON" ]; then jq '{pipeline: ., steps: []}' <<<"$p"
+    else jq -r '"Pipeline #\(.build_number)  \(.state.result.name // .state.name)"' <<<"$p"; fi
+    if has --exit-status; then
+      r="$(jq -r '.state.result.name // ""' <<<"$p")"
+      [ -n "$r" ] && [ "$r" != SUCCESSFUL ] && die "pipeline #${POS#\#} $r"
+    fi
+    exit 0 ;;
+  "repo view")
+    out '"name: \(.full_name)\nmain branch: \(.mainbranch.name)"' <<<'{"full_name": "acme/widgets", "mainbranch": {"name": "main"}, "links": {"html": {"href": "https://bitbucket.org/acme/widgets"}}}'
+    exit 0 ;;
+  "auth status")
+    echo "Logged in to bitbucket.org as $(fx -r .me.display_name)"; exit 0 ;;
+  api\ *)
+    if [ "$kind" = READ ]; then
+      case "$2" in
+        /user|user) fx .me ;;
+        *) die "mock-bb: no fixture for GET $2" ;;
+      esac
+      exit 0
+    fi ;;
+esac
+
+# ---- writes: succeed; with BB_MOCK_STATEFUL=1 merge/close/create also update the fixture file -----
+# set_state ID STATE: record a PR's new state (stateful mode only).
+set_state() {
+  [ "${BB_MOCK_STATEFUL:-}" = 1 ] || return 0
+  local tmp="$FIX.tmp"
+  jq --argjson id "$1" --arg st "$2" '(.prs[] | select(.id == $id)) |= (.state = $st | .updated_on = "2026-11-20T12:00:00+00:00")
+    | del(.list_prs)' "$FIX" >"$tmp" && mv "$tmp" "$FIX"
+}
+case "${1:-} ${2:-}" in
+  "pr create"|"pr new")
+    shift 2; parse "-t --title -b --body -F --body-file -B --base -H --head -r --reviewer" "$@"
+    if [ "${BB_MOCK_STATEFUL:-}" = 1 ]; then
+      jq --arg t "$(opt -t --title)" --arg h "$(opt -H --head || true)" --arg b "$(opt -B --base)" '.prs += [{
+        id: 99, title: $t, state: "OPEN", draft: false, updated_on: "2026-11-20T12:00:00+00:00",
+        source: {branch: {name: (if $h == "" then "HEAD" else $h end)}}, destination: {branch: {name: (if $b == "" then "main" else $b end)}},
+        author: {display_name: "Agent User", username: "agent"}, participants: [],
+        links: {html: {href: "https://bitbucket.org/acme/widgets/pull-requests/99"}}}]' "$FIX" >"$FIX.tmp" && mv "$FIX.tmp" "$FIX"
+    fi
+    echo "https://bitbucket.org/acme/widgets/pull-requests/99" ;;
+  "pr merge")
+    shift 2; parse "-t --subject -b --body -F --body-file" "$@"
+    id="$(pr_id "${POS:-$(git branch --show-current)}")" || exit
+    [ "$(pr_json "$id" | jq -r .state)" = OPEN ] || die "HTTP 400: You can't merge a pull request that isn't open"
+    set_state "$id" MERGED; echo "Merged pull request #$id" ;;
+  "pr comment")  shift 2; parse "-b --body -F --body-file --file --line" "$@"; echo "Commented on pull request #$(pr_id "${POS:-$(git branch --show-current)}")" ;;
+  "pr close"|"pr decline")
+    shift 2; parse "-c --comment" "$@"
+    id="$(pr_id "${POS:-$(git branch --show-current)}")" || exit
+    set_state "$id" DECLINED; echo "Declined pull request #$id" ;;
+  api\ *)        has --input && cat >/dev/null; echo '{}' ;;
+  *)             echo "ok" ;;
+esac
+exit 0
