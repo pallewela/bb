@@ -1,0 +1,94 @@
+{
+  "logged_in": true,
+  "me": {"account_id": "acct-me", "uuid": "{me}", "display_name": "Agent User", "nickname": "agent"},
+  "prs": [
+    {"id": 7, "title": "Login page (first try)", "state": "MERGED", "draft": false, "updated_on": "2026-10-01T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/login"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/7"}}},
+    {"id": 12, "title": "Login page", "state": "OPEN", "draft": false, "updated_on": "2026-11-18T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/login"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"},
+     "participants": [{"role": "REVIEWER", "approved": true, "state": "approved", "user": {"display_name": "Rev One"}}],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/12"}}},
+    {"id": 13, "title": "Login page v2", "state": "OPEN", "draft": false, "updated_on": "2026-11-19T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/login-v2"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Someone Else", "username": "else"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/13"}}},
+    {"id": 14, "title": "Hotfix for main", "state": "OPEN", "draft": false, "updated_on": "2026-11-17T09:00:00+00:00",
+     "source": {"branch": {"name": "hotfix/crash"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/14"}}},
+    {"id": 15, "title": "Hotfix for release", "state": "OPEN", "draft": false, "updated_on": "2026-11-17T10:00:00+00:00",
+     "source": {"branch": {"name": "hotfix/crash"}}, "destination": {"branch": {"name": "release/1.0"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/15"}}},
+    {"id": 20, "title": "Fix typo", "state": "MERGED", "draft": false, "updated_on": "2026-11-10T09:00:00+00:00",
+     "source": {"branch": {"name": "docs/typo"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/20"}}},
+    {"id": 21, "title": "WIP: refactor", "state": "OPEN", "draft": true, "updated_on": "2026-11-16T09:00:00+00:00",
+     "source": {"branch": {"name": "wip/refactor"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/21"}}},
+    {"id": 22, "title": "Blocked change", "state": "OPEN", "draft": false, "updated_on": "2026-11-15T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/blocked"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"},
+     "participants": [{"role": "REVIEWER", "approved": false, "state": "changes_requested", "user": {"display_name": "Rev One"}}],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/22"}}},
+    {"id": 23, "title": "Red build", "state": "OPEN", "draft": false, "updated_on": "2026-11-14T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/red"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/23"}}},
+    {"id": 24, "title": "Slow build", "state": "OPEN", "draft": false, "updated_on": "2026-11-13T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/slow"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/24"}}},
+    {"id": 25, "title": "No CI here", "state": "OPEN", "draft": false, "updated_on": "2026-11-12T09:00:00+00:00",
+     "source": {"branch": {"name": "feature/nochecks"}}, "destination": {"branch": {"name": "main"}},
+     "author": {"display_name": "Agent User", "username": "agent"}, "participants": [],
+     "links": {"html": {"href": "https://bitbucket.org/acme/widgets/pull-requests/25"}}}
+  ],
+  "statuses": {
+    "12": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/12"}],
+    "13": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/13"}],
+    "21": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/21"}],
+    "22": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/22"}],
+    "23": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/23b"},
+           {"key": "test", "name": "Tests", "state": "FAILED", "url": "https://ci.example/23t"}],
+    "24": [{"key": "build", "name": "Build", "state": "INPROGRESS", "url": "https://ci.example/24"}]
+  },
+  "statuses_after_watch": {
+    "24": [{"key": "build", "name": "Build", "state": "SUCCESSFUL", "url": "https://ci.example/24"}]
+  },
+  "comments": {
+    "12": [
+      {"id": 100, "deleted": false, "content": {"raw": "[agent:ci-summary]\n\nold summary"},
+       "user": {"account_id": "acct-me", "display_name": "Agent User"},
+       "links": {"self": {"href": "https://api.bitbucket.org/2.0/repositories/acme/widgets/pullrequests/12/comments/100"}}},
+      {"id": 101, "deleted": false, "content": {"raw": "Looks good to me"},
+       "user": {"account_id": "acct-me", "display_name": "Agent User"},
+       "links": {"self": {"href": "https://api.bitbucket.org/2.0/repositories/acme/widgets/pullrequests/12/comments/101"}}},
+      {"id": 102, "deleted": false, "content": {"raw": "[agent:ci-summary]\n\nquoted by a reviewer"},
+       "user": {"account_id": "acct-other", "display_name": "Rev One"},
+       "links": {"self": {"href": "https://api.bitbucket.org/2.0/repositories/acme/widgets/pullrequests/12/comments/102"}}}
+    ],
+    "13": [
+      {"id": 200, "deleted": false, "content": {"raw": "[agent:ci-summary]\n\nsomeone else's"},
+       "user": {"account_id": "acct-other", "display_name": "Rev One"},
+       "links": {"self": {"href": "https://api.bitbucket.org/2.0/repositories/acme/widgets/pullrequests/13/comments/200"}}}
+    ]
+  },
+  "diffstat": {"12": ["src/login.rs", "Cargo.lock"]},
+  "pipelines": [
+    {"build_number": 41, "uuid": "{p41}", "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}, "target": {"ref_name": "feature/red"}},
+    {"build_number": 40, "uuid": "{p40}", "state": {"name": "IN_PROGRESS"}, "target": {"ref_name": "feature/slow"}},
+    {"build_number": 39, "uuid": "{p39}", "state": {"name": "COMPLETED", "result": {"name": "SUCCESSFUL"}}, "target": {"ref_name": "feature/login"}},
+    {"build_number": 38, "uuid": "{p38}", "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}, "target": {"ref_name": "feature/login"}},
+    {"build_number": 37, "uuid": "{p37}", "state": {"name": "COMPLETED", "result": {"name": "SUCCESSFUL"}}, "target": {"ref_name": "feature/red"}}
+  ],
+  "logs": {
+    "41": "=== Tests ===\nerror: test login::rejects_bad_password failed\n",
+    "38": "=== Tests ===\nerror: an old failure that was fixed in #39\n"
+  }
+}

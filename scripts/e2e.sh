@@ -24,7 +24,7 @@
 #   BB=target/debug/bb scripts/e2e.sh  # test a development build
 #   KEEP=1 scripts/e2e.sh              # keep the test repository afterwards
 #   VERBOSE=1 scripts/e2e.sh           # print each command before running it
-#   VERBOSE=10 scripts/e2e.sh          # ...and its exit code, stdout and stderr
+#   VERBOSE=10 scripts/e2e.sh          # ...and its stdin input, exit code, stdout and stderr
 #
 # Exit status: 0 if every assert passed, 1 otherwise.
 
@@ -75,27 +75,40 @@ FAILED=()
 CREATED_REPOS=()
 TOKEN=""
 
-bb() { "$BB" "$@"; }
+# Verbose output (VERBOSE=1: commands; VERBOSE=10: also their stdin, exit code, stdout and stderr).
+# Colors, as in scripts/skill-e2e.sh: cyan = command, yellow = input (stdin), gray = exit and output.
+# Input is shown on fd 3 (the script's stdout), so it appears even inside $(...).
+exec 3>&1
+mask() { if [ -n "$TOKEN" ]; then printf '%s' "${1//"$TOKEN"/<token>}"; else printf '%s' "$1"; fi; }
+# with_stdin CMD...: run CMD; at VERBOSE>=10, if it reads stdin (an argument `-` or --with-token),
+# show that input first (token masked) and then pass it on.
+with_stdin() {
+  local a reads=""
+  for a in "$@"; do case "$a" in -|--with-token) reads=1 ;; esac; done
+  if [ -z "$reads" ] || ! [ "${VERBOSE:-0}" -ge 10 ] 2>/dev/null || [ -t 0 ]; then "$@"; return; fi
+  local in; in="$(cat; echo x)"; in="${in%x}"
+  mask "$in" | while IFS= read -r a || [ -n "$a" ]; do printf '  \033[33m  in:   %s\033[0m\n' "$a" >&3; done
+  printf '%s' "$in" | "$@"
+}
+bb() { with_stdin "$BB" "$@"; }
 
 # t DESCRIPTION COMMAND...: run COMMAND; keep its stdout in OUT, stderr in ERR, exit code in RC.
 # The asserts below check these and are labelled with DESCRIPTION.
 t() {
   DESC="$1"; shift
   if [ -n "${VERBOSE:-}" ]; then
-    local cmd; cmd="$(printf '%q ' "$@")"
-    [ -n "$TOKEN" ] && cmd="${cmd//"$TOKEN"/<token>}"
-    printf '  \033[2m$ %s\033[0m\n' "$cmd"
+    printf '  \033[36m$ %s\033[0m\n' "$(mask "$(printf '%q ' "$@")")"
   fi
   rm -f "$OPENED"
   OUT="$("$@" 2>"$ERRF")"
   RC=$?
   ERR="$(cat "$ERRF")"
   if [ "${VERBOSE:-0}" -ge 10 ] 2>/dev/null; then
-    local o="$OUT" e="$ERR"
-    if [ -n "$TOKEN" ]; then o="${o//"$TOKEN"/<token>}"; e="${e//"$TOKEN"/<token>}"; fi
-    printf '  \033[2m  exit: %s\033[0m\n' "$RC"
-    [ -n "$o" ] && printf '%s\n' "$o" | sed $'s/^/  \033[2m  out: /; s/$/\033[0m/'
-    [ -n "$e" ] && printf '%s\n' "$e" | sed $'s/^/  \033[2m  err: /; s/$/\033[0m/'
+    local o e
+    o="$(mask "$OUT")"; e="$(mask "$ERR")"
+    printf '  \033[90m  exit: %s\033[0m\n' "$RC"
+    [ -n "$o" ] && printf '%s\n' "$o" | sed $'s/^/  \033[90m  out:  /; s/$/\033[0m/'
+    [ -n "$e" ] && printf '%s\n' "$e" | sed $'s/^/  \033[90m  err:  /; s/$/\033[0m/'
   fi
 }
 
@@ -225,7 +238,7 @@ assert_out 'Token: +invalid'; assert_eq "$([ "$RC" -ne 0 ] && echo yes)" yes "no
 # saved login is never touched. CAUTION: `logout` (and a repeated `login`) delete the keychain
 # entry for the email in hosts.json, so the logout test points hosts.json at a dummy email first.
 CFG="$TMP/config"
-iso() { env -u BITBUCKET_EMAIL -u BITBUCKET_TOKEN XDG_CONFIG_HOME="$CFG" "$BB" "$@"; }
+iso() { with_stdin env -u BITBUCKET_EMAIL -u BITBUCKET_TOKEN XDG_CONFIG_HOME="$CFG" "$BB" "$@"; }
 login_stdin() { printf '%s' "$1" | iso auth login --email "$EMAIL" --with-token --insecure-storage; }
 
 # With no saved login and no env vars, commands exit 4 ("authentication required"), as in gh.

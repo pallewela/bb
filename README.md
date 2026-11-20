@@ -56,16 +56,41 @@ to choose how many, or `-L 0` for all. `ls` works for every `list`.
 Exit codes follow `gh`: 1 = error, 4 = not logged in, 8 = checks still pending (`pr checks`).
 Differences from `gh` (Bitbucket extras, and what can't be matched) are listed per command in the [PRD](PRD.md).
 
+## AI coding agents
+
+[skills/bitbucket-cli/SKILL.md](skills/bitbucket-cli/SKILL.md) is an agent skill that teaches
+coding agents to use `bb` safely: `--json` + `jq` for reads, exit codes 1/4/8, explicit PR ids for
+every write, and tested shell recipes for finding a branch's PR, reading checks, triaging failed
+Pipelines, commenting, and creating or merging PRs. To install it for Claude Code:
+
+    ln -s "$PWD/skills/bitbucket-cli" ~/.claude/skills/bitbucket-cli
+
 ## Testing
 
-    cargo test                          # unit tests
+    cargo test                          # unit tests, plus the skill's recipes against a mock bb
     scripts/e2e.sh                      # end-to-end test of every command against Bitbucket
+    scripts/skill-e2e.sh                # the skill's recipes against Bitbucket (no Pipelines minutes)
+    scripts/skill-eval.sh               # Claude Code + the skill against a mock bb (costs API usage)
 
 `scripts/e2e.sh` creates a throwaway private repository in the `dupelk` workspace (set
 `WORKSPACE` at the top of the script), exercises every command on it with asserts, and deletes it
 afterwards (`KEEP=1` keeps it). It needs SSH access to bitbucket.org, `jq`, and about 10
 Pipelines build minutes (`SKIP_PIPELINES=1` skips those tests). `BB=target/debug/bb` tests a
 development build.
+
+`tests/skill/run.sh` (run by `cargo test` through `tests/skill_recipes.rs`; needs `jq`) extracts the
+`# recipe:` blocks from SKILL.md, runs them against `tests/skill/mock-bb` with the fixture in
+`tests/skill/fixtures/`, and asserts that they pick the right PR and make only the expected writes.
+It then replays each command they ran against the real `bb` (no credentials) to catch flags that
+no longer exist. `scripts/skill-e2e.sh` runs the same recipes on a throwaway repository, as
+`scripts/e2e.sh` does.
+
+`scripts/skill-eval.sh` tests the agent rather than the recipes. It gives `claude -p` requests
+like "merge the PR for my branch" in a scratch checkout where `bb` is the mock, then checks the
+mock's log of `bb` calls: the right PR was used, the expected writes (often none) were made, and
+the answer says what it should. Agent runs vary, so each case runs `RUNS` times (default 3) and
+the score is a pass rate. `NO_SKILL=1` runs the same cases without the skill, as a baseline;
+`--list` lists the cases. A run costs roughly $0.15–0.40.
 
 ## Releases
 
