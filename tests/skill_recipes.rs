@@ -1,8 +1,10 @@
 //! Runs tests/skill/run.sh: the agent skill's recipes against a mocked `bb`, then a check that
-//! the real `bb` (this build) accepts every command line they ran. Needs bash and jq.
+//! the real `bb` (this build) accepts every command line they ran. Needs bash and jq, so it is
+//! skipped on Windows, where `bash` may be WSL's rather than Git's.
 use std::process::Command;
 
 #[test]
+#[cfg_attr(windows, ignore = "needs a Unix bash")]
 fn skill_recipes() {
     if Command::new("jq").arg("--version").output().is_err() {
         eprintln!("skipping skill recipe tests: jq is not installed");

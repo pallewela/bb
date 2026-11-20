@@ -66,10 +66,10 @@ muscle memory carry over unchanged. Every command and flag decision follows thes
 |---|---|
 | Repo resolution | `-R/--repo WORKSPACE/REPO` (global flag; also accepts a bitbucket.org URL). Otherwise parsed from the `origin` git remote of the cwd. |
 | Output | Human-readable aligned tables/text by default. Global `--json` prints the raw API JSON instead (lists print a JSON array). |
-| Auth | HTTP Basic `email:api_token` (Atlassian API token; Bearer does **not** work). Sources, in order: `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` env vars, then the saved login. Storage follows `gh`: the token lives in the OS keychain (macOS Keychain / Windows Credential Manager / Secret Service; service `bb:bitbucket.org`, account = email) and `~/.config/bb/hosts.json` (mode 0600) holds only the email. With `--insecure-storage`, or when no keychain is available, the token is written to `hosts.json` in plaintext instead. Keychain calls time out (3s on Linux, where a stuck Secret Service daemon can hang; 60s elsewhere to allow for an OS access prompt) and then fail or fall back rather than hang. |
+| Auth | HTTP Basic `email:api_token` (Atlassian API token; Bearer does **not** work). Sources, in order: `BITBUCKET_EMAIL` + `BITBUCKET_TOKEN` env vars, then the saved login. Storage follows `gh`: the token lives in the OS keychain (macOS Keychain / Windows Credential Manager / Secret Service; service `bb:bitbucket.org`, account = email) and `hosts.json` (mode 0600) holds only the email. As in `gh`, it lives in `$XDG_CONFIG_HOME/bb/` if that is set, else `%APPDATA%\bb\` on Windows, else `~/.config/bb/`. With `--insecure-storage`, or when no keychain is available, the token is written to `hosts.json` in plaintext instead. Keychain calls time out (3s on Linux, where a stuck Secret Service daemon can hang; 60s elsewhere to allow for an OS access prompt) and then fail or fall back rather than hang. |
 | Errors | Message on stderr. API errors show `HTTP <code>: <message>`. Exit codes follow `gh`: 1 = error, 4 = authentication required (no usable credentials), 8 = checks pending (`pr checks`). |
 | Lists | `-L/--limit N` (default 30 as in `gh`; `run list` 20; `0` = all; `ls` alias on every `list`); pagination followed automatically up to the limit. When `-L` is not given and items are left out, a note on stderr says how many were shown of the total (API `size`) and how to see more; nothing is added to stdout or `--json`. |
-| `--web` | Where offered, opens the resource in the browser instead of printing. |
+| `--web` | Where offered, opens the resource in the browser instead of printing (`open` on macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows, which unlike `cmd /c start` keeps `&` in URLs). |
 
 **Differences from `gh` (all commands)**
 - *Gap:* `--json` prints raw API JSON; `gh`'s `--json FIELDS`, `--jq` and `--template` are a
@@ -324,7 +324,8 @@ layer; Bitbucket payloads are large and we read a handful of fields.
 
 ## 7. Quality bar
 
-- `cargo build` warning-free; `cargo test` green.
+- `cargo build` warning-free; `cargo test` green on macOS, Linux and Windows (CI runs all three;
+  the bash-based skill tests are skipped on Windows).
 - Unit tests for pure logic: remote-URL parsing, PR-argument parsing, query building, `-f` body building.
 - No network in tests. Live verification is a manual read-only smoke test.
 - The agent skill's recipes pass against the mock (`tests/skill/run.sh`, part of `cargo test`),

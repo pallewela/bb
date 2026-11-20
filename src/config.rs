@@ -1,12 +1,15 @@
 //! Credentials, stored the way `gh` does it. Precedence:
 //! 1. BITBUCKET_EMAIL + BITBUCKET_TOKEN env vars
-//! 2. saved login: email in ~/.config/bb/hosts.json, token in the OS keychain
+//! 2. saved login: email in ~/.config/bb/hosts.json (%APPDATA%\bb\hosts.json on Windows),
+//!    token in the OS keychain
 //!    (or in hosts.json itself with --insecure-storage / when no keychain is available).
 use anyhow::{anyhow, bail, Context, Result};
 use keyring::Entry;
 use serde_json::{json, Value};
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     sync::mpsc,
     thread,
@@ -52,10 +55,21 @@ pub enum Source {
 }
 
 pub fn path() -> PathBuf {
-    let base = env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env::var_os("HOME").unwrap_or_default()).join(".config"));
-    base.join("bb").join("hosts.json")
+    config_dir(|k| env::var_os(k), cfg!(windows)).join("bb").join("hosts.json")
+}
+
+/// The directory that holds `bb/hosts.json`, as `gh` picks it: `$XDG_CONFIG_HOME` if set, else
+/// `%APPDATA%` on Windows (which usually has no `HOME`), else `~/.config`.
+fn config_dir(var: impl Fn(&str) -> Option<OsString>, windows: bool) -> PathBuf {
+    let get = |k: &str| var(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+    if let Some(dir) = get("XDG_CONFIG_HOME") {
+        return dir;
+    }
+    if windows && let Some(dir) = get("APPDATA") {
+        return dir;
+    }
+    let home = get("HOME").or_else(|| if windows { get("USERPROFILE") } else { None }).unwrap_or_default();
+    home.join(".config")
 }
 
 /// (email, token if stored in plaintext)
@@ -153,6 +167,22 @@ mod tests {
         }
         fs::remove_dir_all(p.parent().unwrap()).unwrap();
         assert!(read_file(&p).is_err());
+    }
+
+    #[test]
+    fn config_dir_like_gh() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| OsString::from(v))
+        };
+        let all = &[("XDG_CONFIG_HOME", "/xdg"), ("APPDATA", "C:\\AppData"), ("HOME", "/home/u"), ("USERPROFILE", "C:\\Users\\u")];
+        assert_eq!(config_dir(env(all), false), PathBuf::from("/xdg"));
+        assert_eq!(config_dir(env(all), true), PathBuf::from("/xdg"));
+        let no_xdg = &[("XDG_CONFIG_HOME", ""), ("APPDATA", "C:\\AppData"), ("HOME", "/home/u"), ("USERPROFILE", "C:\\Users\\u")];
+        assert_eq!(config_dir(env(no_xdg), false), PathBuf::from("/home/u/.config"));
+        assert_eq!(config_dir(env(no_xdg), true), PathBuf::from("C:\\AppData"));
+        // Windows without APPDATA: HOME, else USERPROFILE.
+        assert_eq!(config_dir(env(&[("USERPROFILE", "C:\\Users\\u")]), true), PathBuf::from("C:\\Users\\u").join(".config"));
+        assert_eq!(config_dir(env(&[("USERPROFILE", "C:\\Users\\u")]), false), PathBuf::from(".config"));
     }
 
     #[test]
