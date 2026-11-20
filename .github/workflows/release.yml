@@ -7,9 +7,10 @@ name: CI & Release
 #            release uses the version in Cargo.toml. "[skip release]" skips the release.
 #   build    one archive per target (macOS arm64/x86_64, Linux arm64/x86_64 static musl,
 #            Windows x86_64), each built and checked on a native runner (PRD §8)
-#   release  one GitHub release with every archive and its .sha256, then the Homebrew tap
-#            (pallewela/homebrew-tap) is bumped via repository_dispatch when the
-#            TAP_REPO_TOKEN secret is set.
+#   release  one GitHub release with every archive and its .sha256; then, if the repository
+#            variable CRATES_IO_PUBLISH is "true", `cargo publish` of bitbucket-bb-cli
+#            (trusted publishing); then the Homebrew tap (pallewela/homebrew-tap) is bumped
+#            via repository_dispatch when the TAP_REPO_TOKEN secret is set.
 # Pull requests run test and build (every target), but never publish.
 
 on:
@@ -228,9 +229,10 @@ jobs:
     needs: [version, build]
     if: needs.version.outputs.publish == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: write
+      id-token: write   # crates.io trusted publishing (OIDC), see "Publish to crates.io"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -330,6 +332,51 @@ jobs:
           name: ${{ needs.version.outputs.tag }}
           body_path: notes.md
           files: dist/*
+
+      # crates.io: on when the repository variable CRATES_IO_PUBLISH is "true". Trusted
+      # publishing (no stored token) needs the crate to exist and this repo + workflow to be
+      # registered under the crate's Settings → Trusted Publishing on crates.io.
+      - name: Check whether to publish to crates.io
+        id: crate
+        env:
+          ENABLED: ${{ vars.CRATES_IO_PUBLISH }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${ENABLED:-}" != true ]; then
+            echo "CRATES_IO_PUBLISH is not \"true\"; not publishing to crates.io."
+            echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          NAME="$(sed -nE 's/^name = "(.*)"/\1/p' Cargo.toml | head -n1)"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A "github.com/${GITHUB_REPOSITORY} release" \
+            "https://crates.io/api/v1/crates/${NAME}/${VERSION}")
+          if [ "$code" = 200 ]; then
+            echo "${NAME} ${VERSION} is already on crates.io; nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing ${NAME} ${VERSION} to crates.io."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.crate.outputs.publish == 'true'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Get a crates.io token (trusted publishing)
+        if: steps.crate.outputs.publish == 'true'
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9  # v1.0.6
+
+      - name: Publish to crates.io
+        if: steps.crate.outputs.publish == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Same version stamp as the binaries. --allow-dirty: the stamp is an uncommitted edit.
+          sed -i -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          cargo publish --allow-dirty
 
       - name: Check tap token presence
         id: tap

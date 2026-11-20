@@ -1,10 +1,23 @@
 [package]
-name = "bb"
+# Published on crates.io as `bitbucket-bb-cli` (`bb` is taken); the command is still `bb`.
+name = "bitbucket-bb-cli"
+# Releases stamp the version from the git tag (see .github/workflows/release.yml); this one is
+# only for local builds.
 version = "0.1.0"
 edition = "2024"
-description = "A gh-style CLI for Bitbucket Cloud"
+description = "bb: a gh-style CLI for Bitbucket Cloud (pull requests, Pipelines, repos, API)"
 license = "MIT"
 repository = "https://github.com/pallewela/bb"
+homepage = "https://github.com/pallewela/bb"
+readme = "README.md"
+keywords = ["bitbucket", "cli", "gh", "pull-request", "pipelines"]
+categories = ["command-line-utilities", "development-tools"]
+# What goes into the crate: just what's needed to build. Tests, scripts and docs stay in git.
+include = ["/src/**/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
+
+[[bin]]
+name = "bb"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"
