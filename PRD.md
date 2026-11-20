@@ -336,7 +336,40 @@ layer; Bitbucket payloads are large and we read a handful of fields.
   given realistic requests must pick the right PR and make only the expected writes. It is not
   deterministic and costs API usage, so it is run by hand (`RUNS=3` or more), not in CI.
 
-## 8. Milestones
+## 8. Releases and supported platforms
+
+Every push to `main` that passes CI is released (`.github/workflows/release.yml`): the patch
+version is bumped unless the head commit says `[bump:minor]`, `[bump:major]` or `[skip release]`.
+Each release publishes one archive per target, built and checked on a native GitHub runner:
+
+| Target | Platform | Runner | Archive | Check before publishing |
+|---|---|---|---|---|
+| `aarch64-apple-darwin` | macOS, Apple silicon | `macos-latest` | `.tar.gz` | runs `bb --version` |
+| `x86_64-apple-darwin` | macOS, Intel | `macos-latest` (cross-built) | `.tar.gz` | `lipo -archs` is `x86_64` (arm64 runner can't run it) |
+| `x86_64-unknown-linux-musl` | Linux x86_64, any distro | `ubuntu-latest` | `.tar.gz` | runs `bb --version`; no shared libraries |
+| `aarch64-unknown-linux-musl` | Linux arm64, any distro | `ubuntu-24.04-arm` | `.tar.gz` | runs `bb --version`; no shared libraries |
+| `x86_64-pc-windows-msvc` | Windows x86_64 | `windows-latest` | `.zip` (`bb.exe`) | runs `bb --version` |
+
+Archives are named `bb-vX.Y.Z-TARGET.{tar.gz,zip}`, contain the binary, `LICENSE` and `README.md`,
+and come with a `.sha256` file. All of them are published in one release call, so a release is
+never partial.
+
+- **Linux binaries are static (musl).** One file works on every distro, old or new, and in Alpine
+  or scratch containers; there is no glibc version to match. This is possible because no
+  dependency needs a system library: TLS is `rustls`, and the keychain (Secret Service) is
+  reached over D-Bus with pure-Rust `zbus`. `ring` compiles some C, hence `musl-tools` on the runner.
+- **Native runners, not cross-compilers** (`cross`, `zig`): each binary is run on its own OS
+  before it is published. Only Intel macOS is cross-built, because GitHub's macOS runners are arm64.
+- **Pull requests build every target too** (without publishing), so a change that breaks one
+  platform's build is caught before it reaches `main`.
+- **Homebrew** (`pallewela/tap/bb`) covers macOS and Linux, arm64 and x86_64: the release sends
+  each archive's SHA256 to the tap, whose workflow rewrites `Formula/bb.rb` with one URL per
+  platform.
+- **Windows** installs from the `.zip` by hand for now. *Gap:* no Scoop or winget package yet, and
+  the binary is unsigned, so SmartScreen may warn the first time it runs.
+- Not built: Windows arm64, 32-bit targets, FreeBSD. They can be added as matrix rows when asked for.
+
+## 9. Milestones
 
 1. Core (client, config, context, output, CLI skeleton) — the contract the rest builds on.
 2. In parallel: `auth` + `api` · `repo` + `browse` · `pr` · `pipeline`.
