@@ -4,12 +4,15 @@ A `gh`-style CLI for Bitbucket Cloud. Scope and design: [PRD.md](PRD.md).
 
 ## Install
 
-    brew install pallewela/tap/bb      # macOS arm64
+    brew install pallewela/tap/bb      # macOS and Linux (arm64 and x86_64)
     brew update && brew upgrade pallewela/tap/bb   # upgrade later
     cargo install --path .             # from source
 
 Always use the full name `pallewela/tap/bb` with brew: plain `bb` also matches an unrelated cask.
-Prebuilt binaries are on the [releases page](https://github.com/pallewela/bb/releases).
+
+Prebuilt binaries for macOS (Apple silicon, Intel), Linux (x86_64, arm64; static, any distro) and
+Windows (x86_64, `.zip`) are on the [releases page](https://github.com/pallewela/bb/releases).
+On Windows, unzip `bb.exe` into a folder on your `PATH`.
 
 ## Auth
 
@@ -95,7 +98,8 @@ the score is a pass rate. `NO_SKILL=1` runs the same cases without the skill, as
 
 ## Releases
 
-Every push to `main` that passes CI is released automatically (`.github/workflows/release.yml`):
+Every push to `main` that passes CI is released automatically (`.github/workflows/release.yml`),
+with an archive for each target in [PRD §8](PRD.md):
 the patch version is bumped by default; put `[bump:minor]` or `[bump:major]` in the head commit
 message to bump more, or `[skip release]` to skip. The Homebrew formula in
 [pallewela/homebrew-tap](https://github.com/pallewela/homebrew-tap) is updated afterwards
