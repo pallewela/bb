@@ -1,13 +1,16 @@
 name: CI & Release
 
 # Every push to main is tested and, if green, released:
-#   - version = latest vX.Y.Z tag bumped by the head commit's marker
-#     ([bump:major] / BREAKING CHANGE, [bump:minor], otherwise patch);
-#     the first release uses the version in Cargo.toml.
-#   - "[skip release]" in the head commit message skips the release.
-#   - the Homebrew tap (pallewela/homebrew-tap) is bumped via
-#     repository_dispatch when the TAP_REPO_TOKEN secret is set.
-# Pull requests run the test job only (on macOS, Linux and Windows).
+#   test     build + cargo test on macOS, Linux and Windows
+#   version  next version = latest vX.Y.Z tag bumped by the head commit's marker
+#            ([bump:major] / BREAKING CHANGE, [bump:minor], otherwise patch); the first
+#            release uses the version in Cargo.toml. "[skip release]" skips the release.
+#   build    one archive per target (macOS arm64/x86_64, Linux arm64/x86_64 static musl,
+#            Windows x86_64), each built and checked on a native runner (PRD §8)
+#   release  one GitHub release with every archive and its .sha256, then the Homebrew tap
+#            (pallewela/homebrew-tap) is bumped via repository_dispatch when the
+#            TAP_REPO_TOKEN secret is set.
+# Pull requests run test and build (every target), but never publish.
 
 on:
   push:
@@ -54,14 +57,20 @@ jobs:
       - name: Test
         run: cargo test --locked
 
-  release:
-    name: Release (macOS arm64)
+  # Decide whether this run publishes a release, and with which version.
+  #   publish=true  push to main (or manual run on main), not [skip release], HEAD not tagged yet
+  #   build=true    publish, or a pull request (PRs build every release target, without publishing)
+  version:
+    name: Version
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.v.outputs.publish }}
+      build: ${{ steps.v.outputs.build }}
+      prev: ${{ steps.v.outputs.prev }}
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -69,27 +78,36 @@ jobs:
 
       - name: Compute next version
         id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
           set -euo pipefail
+          CARGO_VERSION="$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -n1)"
+          no_publish() {   # no_publish REASON: build only on pull requests, else nothing
+            echo "$1"
+            build=false; [ "$EVENT" = pull_request ] && build=true
+            { echo "publish=false"; echo "build=$build"; echo "version=$CARGO_VERSION"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          [ "$EVENT" != pull_request ] && [ "$REF" = refs/heads/main ] || no_publish "Not a push to main; not releasing."
           HEAD_MSG=$(git log -1 --format=%B)
           if echo "$HEAD_MSG" | grep -qiE '\[skip release\]'; then
-            echo "Head commit requests [skip release]; not releasing."
-            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+            no_publish "Head commit requests [skip release]; not releasing."
           fi
           if [ -n "$(git tag --points-at HEAD --list 'v[0-9]*')" ]; then
-            echo "HEAD is already tagged; not releasing again."
-            echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0
+            no_publish "HEAD is already tagged; not releasing again."
           fi
 
           PREV=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
           if [ -z "$PREV" ]; then
-            NEW="v$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -n1)"
+            NEW="v$CARGO_VERSION"
           else
-            LEVEL=patch
+            LEVEL="patch"
             if echo "$HEAD_MSG" | grep -qE '\[bump:major\]|BREAKING CHANGE'; then
-              LEVEL=major
+              LEVEL="major"
             elif echo "$HEAD_MSG" | grep -qE '\[bump:minor\]'; then
-              LEVEL=minor
+              LEVEL="minor"
             fi
             V="${PREV#v}"; MAJ="${V%%.*}"; REST="${V#*.}"; MIN="${REST%%.*}"; PAT="${REST#*.}"
             case "$LEVEL" in
@@ -101,100 +119,219 @@ jobs:
           fi
           echo "Previous: ${PREV:-<none>}  Next: $NEW"
           {
-            echo "skip=false"
+            echo "publish=true"
+            echo "build=true"
             echo "prev=$PREV"
             echo "tag=$NEW"
             echo "version=${NEW#v}"
           } >> "$GITHUB_OUTPUT"
 
+  # One archive per target, each built and checked on a native runner (see PRD §8).
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    if: needs.version.outputs.build == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-apple-darwin,        os: macos-latest }      # cross-built: can't run here
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
       - name: Install Rust toolchain
-        if: steps.v.outputs.skip != 'true'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
-        if: steps.v.outputs.skip != 'true'
+        with:
+          key: ${{ matrix.target }}
+
+      # ring compiles some C; musl targets need musl-gcc (from musl-tools) for it.
+      - name: Install musl tools
+        if: contains(matrix.target, '-musl')
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
 
       - name: Build release binary
-        if: steps.v.outputs.skip != 'true'
         env:
-          VERSION: ${{ steps.v.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          # Stamp the tag's version into the binary (bb --version).
+          # Stamp the tag's version into the binary (bb --version). Not --locked: the stamp
+          # changes bb's own version in Cargo.lock.
           sed -i.bak -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
           rm Cargo.toml.bak
-          cargo build --release
-          ./target/release/bb --version | grep -qx "bb ${VERSION}"
+          cargo build --release --target "$TARGET"
 
-      - name: Package tarball
-        if: steps.v.outputs.skip != 'true'
-        id: pkg
+      - name: Check the binary
         env:
-          TAG: ${{ steps.v.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          ARCHIVE="bb-${TAG}-aarch64-apple-darwin.tar.gz"
-          cp LICENSE README.md target/release/
-          tar -C target/release -czf "$ARCHIVE" bb LICENSE README.md
-          SHA256="$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')"
-          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          BIN="target/$TARGET/release/bb"; [ -f "$BIN.exe" ] && BIN="$BIN.exe"
+          file "$BIN" || true
+          case "$TARGET" in
+            x86_64-apple-darwin)
+              lipo -archs "$BIN" | grep -qx x86_64 ;;       # an arm64 runner can't run it
+            *-linux-musl)
+              "$BIN" --version | grep -qx "bb ${VERSION}"
+              # Static: no dynamic loader or shared libraries.
+              if ldd "$BIN" 2>&1 | grep -q '=>'; then ldd "$BIN"; echo "::error::not static"; exit 1; fi ;;
+            *)
+              "$BIN" --version | tr -d '\r' | grep -qx "bb ${VERSION}" ;;
+          esac
+
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          cp LICENSE README.md "$STAGE/"
+          mkdir -p dist
+          if [[ "$TARGET" == *windows* ]]; then
+            cp "target/$TARGET/release/bb.exe" "$STAGE/"
+            ARCHIVE="bb-v${VERSION}-${TARGET}.zip"
+            (cd "$STAGE" && 7z a -tzip -bso0 "$OLDPWD/dist/$ARCHIVE" bb.exe LICENSE README.md)
+          else
+            cp "target/$TARGET/release/bb" "$STAGE/"
+            ARCHIVE="bb-v${VERSION}-${TARGET}.tar.gz"
+            tar -C "$STAGE" -czf "dist/$ARCHIVE" bb LICENSE README.md
+          fi
+          cd dist
+          # "SUM  NAME" everywhere: Git Bash's sha256sum writes "SUM *NAME" (binary mode) on Windows.
+          if command -v sha256sum >/dev/null; then sha256sum "$ARCHIVE"; else shasum -a 256 "$ARCHIVE"; fi |
+            sed 's/ \*/  /' > "$ARCHIVE.sha256"
+          cat "$ARCHIVE.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bb-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: [version, build]
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          path: dist
+          pattern: bb-*
+          merge-multiple: true
+
+      - name: Collect checksums
+        id: sums
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          (cd dist && sha256sum -c ./*.sha256)
+          sum() { awk '{print $1}' "dist/bb-v${VERSION}-$1.$2.sha256"; }
           {
-            echo "archive=$ARCHIVE"
-            echo "sha256=$SHA256"
-          } >> "$GITHUB_OUTPUT"
+            echo "aarch64_apple_darwin=$(sum aarch64-apple-darwin tar.gz)"
+            echo "x86_64_apple_darwin=$(sum x86_64-apple-darwin tar.gz)"
+            echo "x86_64_unknown_linux_musl=$(sum x86_64-unknown-linux-musl tar.gz)"
+            echo "aarch64_unknown_linux_musl=$(sum aarch64-unknown-linux-musl tar.gz)"
+            echo "x86_64_pc_windows_msvc=$(sum x86_64-pc-windows-msvc zip)"
+          } | tee -a "$GITHUB_OUTPUT"
 
       - name: Write release notes
-        if: steps.v.outputs.skip != 'true'
         env:
-          PREV: ${{ steps.v.outputs.prev }}
-          TAG: ${{ steps.v.outputs.tag }}
-          ARCHIVE: ${{ steps.pkg.outputs.archive }}
-          SHA256: ${{ steps.pkg.outputs.sha256 }}
+          PREV: ${{ needs.version.outputs.prev }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
           RANGE="${PREV:+${PREV}..}HEAD"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          WIN="bb-${TAG}-x86_64-pc-windows-msvc.zip"
           {
             echo "## Changes"
             echo
             git log "$RANGE" --no-merges --format='- %s (%h)' | grep -viE '\[skip release\]' || true
             echo
-            echo "## Install via Homebrew"
-            echo
-            echo '```sh'
-            echo 'brew install pallewela/tap/bb'
+            cat <<'MD'
+          ## Install via Homebrew (macOS and Linux)
+
+          ```sh
+          brew install pallewela/tap/bb
+          ```
+
+          Upgrading: `brew update && brew upgrade pallewela/tap/bb`
+
+          Use the full name `pallewela/tap/bb` in brew commands: plain `bb` also matches an unrelated cask.
+
+          ## Manual install
+
+          macOS or Linux: replace `TARGET` with your platform's target from the table below
+          (e.g. `x86_64-unknown-linux-musl`), then
+
+          ```sh
+          MD
+            echo "curl -L ${URL}/bb-${TAG}-TARGET.tar.gz | tar -xz bb"
+            echo "install -m 0755 bb /usr/local/bin/bb"
             echo '```'
             echo
-            echo 'Upgrading: `brew update && brew upgrade pallewela/tap/bb`'
+            echo "Windows (PowerShell): download \`${WIN}\`, then"
             echo
-            echo 'Use the full name `pallewela/tap/bb` in brew commands: plain `bb` also matches an unrelated cask.'
-            echo
-            echo "## Manual install (macOS arm64)"
-            echo
-            echo '```sh'
-            echo "curl -L https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ARCHIVE} | tar -xz bb"
-            echo 'install -m 0755 bb /usr/local/bin/bb'
+            echo '```powershell'
+            echo "Expand-Archive ${WIN} -DestinationPath \"\$env:LOCALAPPDATA/Programs/bb\""
+            echo '# then add that folder to your PATH'
             echo '```'
             echo
-            echo "**SHA256** (\`${ARCHIVE}\`): \`${SHA256}\`"
+            echo "| Platform | Archive | SHA256 |"
+            echo "|---|---|---|"
+            for f in dist/*.sha256; do
+              read -r sum name < "$f"
+              name="${name#\*}"
+              case "$name" in
+                *aarch64-apple-darwin*) p="macOS Apple silicon" ;;
+                *x86_64-apple-darwin*) p="macOS Intel" ;;
+                *x86_64-unknown-linux-musl*) p="Linux x86_64 (static)" ;;
+                *aarch64-unknown-linux-musl*) p="Linux arm64 (static)" ;;
+                *x86_64-pc-windows-msvc*) p="Windows x86_64" ;;
+                *) p="$name" ;;
+              esac
+              echo "| $p | \`$name\` | \`$sum\` |"
+            done
           } > notes.md
           cat notes.md
 
       # Creates the tag at this commit and publishes all assets in one call
       # (releases are immutable once published).
       - name: Create GitHub Release
-        if: steps.v.outputs.skip != 'true'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3
         with:
-          tag_name: ${{ steps.v.outputs.tag }}
+          tag_name: ${{ needs.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
-          name: ${{ steps.v.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
           body_path: notes.md
-          files: |
-            ${{ steps.pkg.outputs.archive }}
-            ${{ steps.pkg.outputs.archive }}.sha256
+          files: dist/*
 
       - name: Check tap token presence
-        if: steps.v.outputs.skip != 'true'
         id: tap
         env:
           TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
@@ -206,8 +343,10 @@ jobs:
             echo "::warning::TAP_REPO_TOKEN secret is not set; skipping Homebrew tap bump."
           fi
 
+      # `sha256` is the macOS arm64 archive's (what older versions of the tap workflow read);
+      # the per-target keys let it write a formula for macOS and Linux, arm64 and x86_64.
       - name: Bump Homebrew tap formula
-        if: steps.v.outputs.skip != 'true' && steps.tap.outputs.present == 'true'
+        if: steps.tap.outputs.present == 'true'
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697  # v4
         with:
           token: ${{ secrets.TAP_REPO_TOKEN }}
@@ -215,25 +354,29 @@ jobs:
           event-type: bb-release
           client-payload: |
             {
-              "tag": "${{ steps.v.outputs.tag }}",
-              "sha256": "${{ steps.pkg.outputs.sha256 }}"
+              "tag": "${{ needs.version.outputs.tag }}",
+              "sha256": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
+              "sha256_aarch64_apple_darwin": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
+              "sha256_x86_64_apple_darwin": "${{ steps.sums.outputs.x86_64_apple_darwin }}",
+              "sha256_x86_64_unknown_linux_musl": "${{ steps.sums.outputs.x86_64_unknown_linux_musl }}",
+              "sha256_aarch64_unknown_linux_musl": "${{ steps.sums.outputs.aarch64_unknown_linux_musl }}"
             }
 
       # repository_dispatch only confirms the event was accepted; poll the
       # formula so a green release means brew actually has the new version.
       - name: Verify Homebrew tap formula updated
-        if: steps.v.outputs.skip != 'true' && steps.tap.outputs.present == 'true'
+        if: steps.tap.outputs.present == 'true'
         env:
           GH_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
-          VERSION: ${{ steps.v.outputs.version }}
-          EXPECTED_SHA256: ${{ steps.pkg.outputs.sha256 }}
+          VERSION: ${{ needs.version.outputs.version }}
+          EXPECTED_SHA256: ${{ steps.sums.outputs.aarch64_apple_darwin }}
         run: |
           set -euo pipefail
           for attempt in $(seq 1 18); do
             content=$(gh api repos/pallewela/homebrew-tap/contents/Formula/bb.rb \
               --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
             if printf '%s\n' "$content" | grep -qE "^  version \"${VERSION}\"\$" \
-               && printf '%s\n' "$content" | grep -qiE "^  sha256 \"${EXPECTED_SHA256}\"\$"; then
+               && printf '%s\n' "$content" | grep -qiE "^ +sha256 \"${EXPECTED_SHA256}\"\$"; then
               echo "Tap formula updated to ${VERSION}."
               exit 0
             fi
