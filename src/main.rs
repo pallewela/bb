@@ -97,4 +97,13 @@ mod tests {
             assert_eq!(cli.repo.as_deref(), Some("ws/r"));
         }
     }
+
+    #[test]
+    fn pr_merge_strategy_flags_are_exclusive() {
+        assert!(Cli::try_parse_from(["bb", "pr", "merge", "1", "--rebase-merge"]).is_ok());
+        assert!(Cli::try_parse_from(["bb", "pr", "merge", "1", "--squash-fast-forward"]).is_ok());
+        for args in [["bb", "pr", "merge", "1", "--rebase-merge", "-s"], ["bb", "pr", "merge", "1", "--squash-fast-forward", "--rebase-merge"]] {
+            assert_eq!(Cli::try_parse_from(args).err().unwrap().kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+    }
 }

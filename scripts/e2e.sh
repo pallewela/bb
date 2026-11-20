@@ -781,7 +781,7 @@ t "pr checkout --detach" in_dir "$CLONE2" bb pr checkout "$PR_A" --detach
 assert_rc 0; assert_eq "$(branch2)" "" "branch"; assert_eq "$(head2)" "$SHA_A" "HEAD"
 
 # ---------------------------------------------------------------------------------------------
-section "8. pr: merge (merge commit, squash, rebase, fast-forward) and close"
+section "8. pr: merge (merge commit, squash, rebase, fast-forward, squash-fast-forward) and close"
 # ---------------------------------------------------------------------------------------------
 
 latest_message() { bb api "/repositories/$FULL/commits/main?pagelen=1" | jq -r '.values[0].message'; }
@@ -827,6 +827,19 @@ t "pr merge -s" in_dir "$CLONE" bb pr merge "$PR_C" -s -t "Squash C $RUN_ID"
 assert_rc 0; assert_out "^Merged pull request #$PR_C\$"; assert_eq "$(pr_state "$PR_C")" MERGED "state"
 assert_eq "$(latest_message | head -1)" "Squash C $RUN_ID" "squash commit subject"
 
+# `--squash-fast-forward` squashes onto main without a merge commit, if the repository allows it.
+new_branch feature-g g.txt
+t "pr create (G)" in_dir "$CLONE" bb pr create -t "$TAG G" --json
+PR_G="$(jq -r .id <<<"$OUT")"
+t "pr merge --squash-fast-forward" in_dir "$CLONE" bb pr merge "$PR_G" --squash-fast-forward -t "Squash FF G $RUN_ID"
+if [ "$RC" -eq 0 ]; then
+  assert_out "^Merged pull request #$PR_G\$"; assert_eq "$(pr_state "$PR_G")" MERGED "state"
+  assert_eq "$(latest_message | head -1)" "Squash FF G $RUN_ID" "squash-fast-forward commit subject"
+else
+  assert_err 'HTTP 4[0-9][0-9]'  # strategy not enabled for this repository
+  bb pr close -R "$FULL" "$PR_G" >/dev/null 2>&1  # so no PR is left open
+fi
+
 # `-r` rebases the commits onto main (Bitbucket's rebase_fast_forward), if the repository allows it.
 new_branch feature-d d.txt
 t "pr create (D)" in_dir "$CLONE" bb pr create -t "$TAG D" --json
@@ -837,7 +850,7 @@ if [ "$RC" -eq 0 ]; then
   assert_eq "$(latest_message | head -1)" "Add d.txt" "rebased commit on main"
 else
   assert_err 'HTTP 4[0-9][0-9]'  # strategy not enabled for this repository
-  bb pr close "$PR_D" >/dev/null 2>&1  # so no PR is left open
+  bb pr close -R "$FULL" "$PR_D" >/dev/null 2>&1  # so no PR is left open
 fi
 
 # `--fast-forward` moves main to the PR's head commit without a merge commit.

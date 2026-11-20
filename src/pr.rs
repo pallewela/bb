@@ -152,6 +152,12 @@ pub enum Cmd {
         /// Fast-forward only (Bitbucket `fast_forward`)
         #[arg(long, group = "strategy")]
         fast_forward: bool,
+        /// Rebase, then create a merge commit (Bitbucket `rebase_merge`)
+        #[arg(long, group = "strategy")]
+        rebase_merge: bool,
+        /// Squash, then fast-forward (Bitbucket `squash_fast_forward`)
+        #[arg(long, group = "strategy")]
+        squash_fast_forward: bool,
         /// Subject text for the merge commit
         #[arg(short = 't', long, alias = "message")]
         subject: Option<String>,
@@ -264,6 +270,12 @@ pub enum Cmd {
         #[arg(short, long)]
         web: bool,
     },
+}
+
+/// The Bitbucket `merge_strategy` for the strategy flags, in `Cmd::Merge` order (clap allows at most one).
+fn merge_strategy(on: [bool; 6]) -> Option<&'static str> {
+    let names = ["merge_commit", "squash", "rebase_fast_forward", "fast_forward", "rebase_merge", "squash_fast_forward"];
+    on.into_iter().zip(names).find_map(|(on, name)| on.then_some(name))
 }
 
 pub fn run(cmd: Cmd) -> Result<()> {
@@ -458,15 +470,15 @@ pub fn run(cmd: Cmd) -> Result<()> {
             squash,
             rebase,
             fast_forward,
+            rebase_merge,
+            squash_fast_forward,
             subject,
             body,
             body_file,
             delete_branch,
             close_source_branch,
         } => {
-            let strategy = [(merge, "merge_commit"), (squash, "squash"), (rebase, "rebase_fast_forward"), (fast_forward, "fast_forward")]
-                .into_iter()
-                .find_map(|(on, name)| on.then_some(name));
+            let strategy = merge_strategy([merge, squash, rebase, fast_forward, rebase_merge, squash_fast_forward]);
             let message = commit_message(subject, read_body(body, body_file)?);
             let (c, path, id) = target(&p.pr)?;
             let close = close_source_branch || delete_branch;
@@ -1058,6 +1070,9 @@ mod tests {
             merge_body(Some("squash"), &Some("m".into()), true),
             json!({"merge_strategy": "squash", "message": "m", "close_source_branch": true})
         );
+        assert_eq!(merge_strategy([false; 6]), None);
+        assert_eq!(merge_strategy([false, false, false, false, true, false]), Some("rebase_merge"));
+        assert_eq!(merge_strategy([false, false, false, false, false, true]), Some("squash_fast_forward"));
         assert_eq!(commit_message(Some("s".into()), Some("b".into())), Some("s\n\nb".into()));
         assert_eq!(commit_message(None, Some("b".into())), Some("b".into()));
         assert_eq!(commit_message(None, None), None);

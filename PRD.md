@@ -140,7 +140,7 @@ whose source is that branch, else the most recently updated PR from it in any st
 | `pr create` (alias `new`) `[-t TITLE] [-b BODY \| -F FILE] [-B BASE] [-H HEAD] [-d] [-r UUID\|ACCOUNT_ID…] [--close-source-branch] [-f \| --fill-first \| --fill-verbose] [--dry-run] [-w]` | `POST` — head defaults to current branch, base to repo main branch. Fill modes read the commits in `origin/BASE..HEAD` (falling back to the last commit): `--fill` uses one commit's subject/body, or for several commits the humanized branch name as title and a commit list as body; `--fill-first` uses the first commit; `--fill-verbose` puts every commit's subject and body in the description. Explicit `-t`/`-b` win. `--dry-run` prints what would be created. Prints the PR URL. |
 | `pr checkout PR` (alias `co`) `[-b LOCAL] [-f] [--detach]` | `git fetch origin +refs/heads/SRC:refs/remotes/origin/SRC`, then: new local branch → `checkout -b LOCAL --track origin/SRC`; existing → `checkout` + `merge --ff-only` (or `checkout -B` with `-f`); `--detach` → detached at `origin/SRC`. |
 | `pr diff [PR] [--name-only \| --patch] [--color always\|never\|auto] [-e GLOB…] [-w]` | `GET /{id}/diff`, `/{id}/patch`, or `/{id}/diffstat` for `--name-only`. `-e` drops files whose path or file name matches the glob. |
-| `pr merge [PR] [-m \| -s \| -r \| --fast-forward] [-t SUBJECT] [-b BODY \| -F FILE] [-d] [--close-source-branch]` | `POST /{id}/merge` with `merge_strategy` (`merge_commit`, `squash`, `rebase_fast_forward`, `fast_forward`) and `message` = subject + body. `-d` sets `close_source_branch` and deletes the local branch (switching to the base branch first if it's checked out). |
+| `pr merge [PR] [-m \| -s \| -r \| --fast-forward \| --rebase-merge \| --squash-fast-forward] [-t SUBJECT] [-b BODY \| -F FILE] [-d] [--close-source-branch]` | `POST /{id}/merge` with `merge_strategy` (`merge_commit`, `squash`, `rebase_fast_forward`, `fast_forward`, `rebase_merge`, `squash_fast_forward`) and `message` = subject + body. `-d` sets `close_source_branch` and deletes the local branch (switching to the base branch first if it's checked out). |
 | `pr close [PR] [-c COMMENT] [-d]` (alias `decline`) | Optional comment, then `POST /{id}/decline`. `-d` deletes the source branch (`DELETE /repositories/{ws}/{slug}/refs/branches/{name}`) and the local branch. |
 | `pr review [PR] -a \| -r \| -c [-b BODY \| -F FILE]` | Body (required for `-r`/`-c`) is posted as a comment; then `POST /{id}/approve` or `/{id}/request-changes`. |
 | `pr approve [PR]` / `pr unapprove [PR]` | `POST` / `DELETE /{id}/approve`. |
@@ -170,8 +170,9 @@ PR states map as follows. `gh`'s values must be accepted with `gh`'s meaning; Bi
 - *Extra:* `pr create --close-source-branch`, `pr merge --fast-forward` and `--close-source-branch`
   (Bitbucket options; `--close-source-branch` keeps the local branch, `-d` deletes it too). `pr merge --message`
   is kept as a hidden alias of `--subject`.
-- *Gap:* `pr merge -r/--rebase` uses `rebase_fast_forward` (rebase, no merge commit), the closest to
-  `gh`'s rebase. Bitbucket's `rebase_merge` and `squash_fast_forward` have no flag yet.
+- *Extra:* `pr merge --rebase-merge` and `--squash-fast-forward` (Bitbucket's `rebase_merge` and
+  `squash_fast_forward`). `-r/--rebase` uses `rebase_fast_forward` (rebase, no merge commit), the closest
+  to `gh`'s rebase.
 - *Gap:* `pr create -r/--reviewer` needs a UUID or account_id; `gh` takes a handle. Bitbucket can't look
   users up by nickname: `/workspaces/{ws}/members` only filters by email (and only for admins), so
   resolving a nickname means scanning every member of the workspace (thousands in large ones).
@@ -248,9 +249,12 @@ body, pretty-printed if JSON; on a non-2xx status the body is still printed, the
 and prints the concatenated `values` array.
 
 **Differences from `gh`**
-- *Gap:* `--paginate` prints one combined `values` array, which is closer to `gh api --paginate --slurp`,
-  because Bitbucket pages are objects that wrap `values`. Keep and document this, or add `--slurp` (#6).
-  `--paginate` can't be combined with `-H`, `-i` or `--verbose`.
+- *Deliberate:* `--paginate` prints one combined array of every page's `values`, not each page in turn as
+  `gh` does. Bitbucket pages are objects that wrap `values`, so printing them as-is would need
+  `jq '.values[]'` where `gh` users write `jq '.[]'`; the combined array keeps `jq '.[]'` working and is
+  one valid JSON document. `--slurp` is not accepted: `gh`'s gives an array of pages, which `bb` doesn't
+  produce, so a copied `gh … --slurp` command fails loudly rather than returning a different shape.
+- *Gap:* `--paginate` can't be combined with `-H`, `-i` or `--verbose`.
 - *Gap:* no nested field syntax (`key[sub]=v`, `key[]=v`) and no `{owner}`/`{repo}`/`{branch}`
   placeholders; use `--input` for nested bodies. `--input` must be JSON.
 - *Gap:* `-i`/`--verbose` show HTTP/1.1 and lowercased header names (as received).
