@@ -32,8 +32,10 @@ Each release publishes one archive per target, built and checked on a native Git
 | `x86_64-pc-windows-msvc` | Windows x86_64 | `.zip` (`bb.exe`) | runs `bb --version` |
 
 Archives are named `bb-vX.Y.Z-TARGET.{tar.gz,zip}`, contain the binary, `LICENSE` and
-`README.md`, and come with a `.sha256` file. All of them are published in one release call, so a
-release is never partial.
+`README.md`, and come with a `.sha256` file. The release also has a signed build provenance
+attestation for all archives (`bb-vX.Y.Z.intoto.jsonl`); see
+[Verify a download](install.md#verify-a-download). All of them are published in one release
+call, so a release is never partial.
 
 Linux binaries are static (musl): TLS is `rustls` and the keychain (Secret Service) is reached
 over D-Bus with pure-Rust `zbus`, so no system library is needed.
