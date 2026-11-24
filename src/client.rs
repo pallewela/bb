@@ -37,7 +37,8 @@ impl Client {
     /// Client using stored credentials (env vars, then credentials file).
     pub fn new() -> Result<Client> {
         // No usable credentials: exit 4, like `gh` when authentication is required.
-        let (creds, _) = config::load().map_err(|e| crate::exit::Exit::err(crate::exit::AUTH_REQUIRED, format!("{e:#}")))?;
+        let (creds, _) =
+            config::load().map_err(|e| crate::exit::Exit::err(crate::exit::AUTH_REQUIRED, format!("{e:#}")))?;
         Ok(Client::with_creds(&creds))
     }
 
@@ -59,11 +60,15 @@ impl Client {
     }
 
     /// Send one request with auth, extra headers and an optional JSON body.
-    fn call(&self, method: &str, path: &str, headers: &[(String, String)], body: Option<&Value>) -> Result<http::Response<ureq::Body>> {
-        let mut req = http::Request::builder()
-            .method(method)
-            .uri(escape_uri(&url(path)))
-            .header("Authorization", &self.auth);
+    fn call(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(String, String)],
+        body: Option<&Value>,
+    ) -> Result<http::Response<ureq::Body>> {
+        let mut req =
+            http::Request::builder().method(method).uri(escape_uri(&url(path))).header("Authorization", &self.auth);
         for (k, v) in headers {
             req = req.header(k, v);
         }
@@ -77,7 +82,9 @@ impl Client {
             }
             // ureq 3 sends `Transfer-Encoding: chunked` for a POST without a body; send
             // `Content-Length: 0` instead, as ureq 2 did (approve, decline, ...).
-            None if matches!(method, "POST" | "PUT" | "PATCH") => self.agent.run(req.body(&[][..]).context("invalid request")?),
+            None if matches!(method, "POST" | "PUT" | "PATCH") => {
+                self.agent.run(req.body(&[][..]).context("invalid request")?)
+            }
             None => self.agent.run(req.body(()).context("invalid request")?),
         };
         res.context("request failed")
@@ -95,7 +102,13 @@ impl Client {
     }
 
     /// Request with extra headers that returns the full response, whatever its status (for `bb api`).
-    pub fn send(&self, method: &str, path: &str, headers: &[(String, String)], body: Option<&Value>) -> Result<Response> {
+    pub fn send(
+        &self,
+        method: &str,
+        path: &str,
+        headers: &[(String, String)],
+        body: Option<&Value>,
+    ) -> Result<Response> {
         let mut r = self.call(method, path, headers, body)?;
         let status = r.status();
         let headers = r
@@ -105,7 +118,9 @@ impl Client {
             .collect();
         Ok(Response {
             status: status.as_u16(),
-            status_line: format!("{:?} {} {}", r.version(), status.as_u16(), status.canonical_reason().unwrap_or("")).trim_end().to_string(),
+            status_line: format!("{:?} {} {}", r.version(), status.as_u16(), status.canonical_reason().unwrap_or(""))
+                .trim_end()
+                .to_string(),
             headers,
             body: r.body_mut().read_to_string().context("reading response")?,
         })
@@ -209,9 +224,8 @@ fn escape_uri(s: &str) -> String {
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'%' => out.push(b as char),
-            b':' | b'/' | b'?' | b'#' | b'[' | b']' | b'@' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'=' => {
-                out.push(b as char)
-            }
+            b':' | b'/' | b'?' | b'#' | b'[' | b']' | b'@' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+'
+            | b',' | b';' | b'=' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -271,7 +285,11 @@ mod tests {
         use std::io::{BufRead, BufReader, Read, Write};
         let listener = std::net::TcpListener::bind(bind).unwrap();
         let addr = listener.local_addr().unwrap();
-        let host = if bind.ip().is_loopback() && bind.ip().is_ipv6() { format!("[{}]", addr.ip()) } else { addr.ip().to_string() };
+        let host = if bind.ip().is_loopback() && bind.ip().is_ipv6() {
+            format!("[{}]", addr.ip())
+        } else {
+            addr.ip().to_string()
+        };
         let base = format!("http://{host}:{}", addr.port());
         let b = base.clone();
         let handle = std::thread::spawn(move || {
@@ -369,7 +387,8 @@ mod tests {
     #[test]
     fn error_status_uses_api_message() {
         let err = r#"{"type":"error","error":{"message":"Repository not found"}}"#;
-        let (base, srv) = serve(local(), vec![reply("404 Not Found", &[], err), reply("500 Internal Server Error", &[], "boom\n")]);
+        let (base, srv) =
+            serve(local(), vec![reply("404 Not Found", &[], err), reply("500 Internal Server Error", &[], "boom\n")]);
         let c = client();
         assert_eq!(c.get(&format!("{base}/a")).unwrap_err().to_string(), "HTTP 404: Repository not found");
         assert_eq!(c.get_text(&format!("{base}/b")).unwrap_err().to_string(), "HTTP 500: boom");
@@ -391,7 +410,10 @@ mod tests {
             local(),
             vec![reply("403 Forbidden", &["X-A: 1", "Set-Cookie: a=1", "Set-Cookie: b=2"], r#"{"error":{}}"#)],
         );
-        let headers = vec![("Accept".to_string(), "text/plain".to_string()), ("Content-Type".to_string(), "application/x-test".to_string())];
+        let headers = vec![
+            ("Accept".to_string(), "text/plain".to_string()),
+            ("Content-Type".to_string(), "application/x-test".to_string()),
+        ];
         let r = client().send("PUT", &format!("{base}/p"), &headers, Some(&serde_json::json!(1))).unwrap();
         assert_eq!(r.status, 403);
         assert_eq!(r.status_line, "HTTP/1.1 403 Forbidden");
@@ -432,7 +454,8 @@ mod tests {
     #[test]
     fn redirect_keeps_auth_on_same_host_only() {
         // Another host name for the loopback interface, so the second server counts as a different host.
-        let other: std::net::SocketAddr = std::net::ToSocketAddrs::to_socket_addrs(&("localhost", 0)).unwrap().next().unwrap();
+        let other: std::net::SocketAddr =
+            std::net::ToSocketAddrs::to_socket_addrs(&("localhost", 0)).unwrap().next().unwrap();
         let (s3, s3_srv) = serve(other, vec![reply("200 OK", &[], "log text")]);
         let s3 = s3.replace(&other.ip().to_string(), "localhost").replace("[localhost]", "localhost");
         let (base, srv) = serve(

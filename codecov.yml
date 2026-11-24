@@ -1,0 +1,7 @@
+# Each OS in ci.yml uploads its own report (flags macos, linux, windows). Wait for all three
+# before posting statuses or the PR comment, so they reflect the merged coverage.
+codecov:
+  notify:
+    after_n_builds: 3
+comment:
+  after_n_builds: 3

@@ -3,9 +3,9 @@
 //! 2. saved login: email in ~/.config/bb/hosts.json (%APPDATA%\bb\hosts.json on Windows),
 //!    token in the OS keychain
 //!    (or in hosts.json itself with --insecure-storage / when no keychain is available).
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use keyring::Entry;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     env,
     ffi::OsString,
@@ -174,14 +174,27 @@ mod tests {
         let env = |pairs: &'static [(&'static str, &'static str)]| {
             move |k: &str| pairs.iter().find(|(n, _)| *n == k).map(|(_, v)| OsString::from(v))
         };
-        let all = &[("XDG_CONFIG_HOME", "/xdg"), ("APPDATA", "C:\\AppData"), ("HOME", "/home/u"), ("USERPROFILE", "C:\\Users\\u")];
+        let all = &[
+            ("XDG_CONFIG_HOME", "/xdg"),
+            ("APPDATA", "C:\\AppData"),
+            ("HOME", "/home/u"),
+            ("USERPROFILE", "C:\\Users\\u"),
+        ];
         assert_eq!(config_dir(env(all), false), PathBuf::from("/xdg"));
         assert_eq!(config_dir(env(all), true), PathBuf::from("/xdg"));
-        let no_xdg = &[("XDG_CONFIG_HOME", ""), ("APPDATA", "C:\\AppData"), ("HOME", "/home/u"), ("USERPROFILE", "C:\\Users\\u")];
+        let no_xdg = &[
+            ("XDG_CONFIG_HOME", ""),
+            ("APPDATA", "C:\\AppData"),
+            ("HOME", "/home/u"),
+            ("USERPROFILE", "C:\\Users\\u"),
+        ];
         assert_eq!(config_dir(env(no_xdg), false), PathBuf::from("/home/u/.config"));
         assert_eq!(config_dir(env(no_xdg), true), PathBuf::from("C:\\AppData"));
         // Windows without APPDATA: HOME, else USERPROFILE.
-        assert_eq!(config_dir(env(&[("USERPROFILE", "C:\\Users\\u")]), true), PathBuf::from("C:\\Users\\u").join(".config"));
+        assert_eq!(
+            config_dir(env(&[("USERPROFILE", "C:\\Users\\u")]), true),
+            PathBuf::from("C:\\Users\\u").join(".config")
+        );
         assert_eq!(config_dir(env(&[("USERPROFILE", "C:\\Users\\u")]), false), PathBuf::from(".config"));
     }
 

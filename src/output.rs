@@ -44,9 +44,8 @@ pub fn table(rows: &[Vec<String>]) {
 /// `table`'s output as a string (one `\n`-terminated line per row).
 pub fn table_string(rows: &[Vec<String>]) -> String {
     let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
-    let widths: Vec<usize> = (0..cols)
-        .map(|c| rows.iter().filter_map(|r| r.get(c)).map(|x| x.chars().count()).max().unwrap_or(0))
-        .collect();
+    let widths: Vec<usize> =
+        (0..cols).map(|c| rows.iter().filter_map(|r| r.get(c)).map(|x| x.chars().count()).max().unwrap_or(0)).collect();
     let mut out = String::new();
     for row in rows {
         let line: Vec<String> = row

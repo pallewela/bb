@@ -1,5 +1,5 @@
 //! Which repository are we talking about, plus small git helpers.
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use std::{process::Command, sync::OnceLock};
 
 static REPO_FLAG: OnceLock<Option<String>> = OnceLock::new();

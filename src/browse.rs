@@ -1,8 +1,8 @@
 //! `bb browse`: open the repo, a PR, a commit, a branch, a file/dir, or a repo page on bitbucket.org.
-use crate::client::{enc, Client};
-use crate::context::{current_branch, git, Repo};
+use crate::client::{Client, enc};
+use crate::context::{Repo, current_branch, git};
 use crate::output::{open_browser, s};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 #[derive(clap::Args)]
 #[command(group(
@@ -54,7 +54,9 @@ fn classify(arg: &str) -> Target<'_> {
         return Target::Commit(arg);
     }
     match arg.rsplit_once(':') {
-        Some((p, l)) if digits(l) || l.split_once('-').is_some_and(|(a, b)| digits(a) && digits(b)) => Target::Path(p, Some(l)),
+        Some((p, l)) if digits(l) || l.split_once('-').is_some_and(|(a, b)| digits(a) && digits(b)) => {
+            Target::Path(p, Some(l))
+        }
         _ => Target::Path(arg, None),
     }
 }
@@ -144,8 +146,14 @@ mod tests {
         let w = "https://bitbucket.org/ws/r";
         assert_eq!(browse_url(w, None, "", None, false), w);
         assert_eq!(browse_url(w, Some("main"), "", None, false), "https://bitbucket.org/ws/r/src/main/");
-        assert_eq!(browse_url(w, Some("feat/x"), "./src/a.rs", None, false), "https://bitbucket.org/ws/r/src/feat/x/src/a.rs");
-        assert_eq!(browse_url(w, Some("main"), "a.rs", Some("12"), false), "https://bitbucket.org/ws/r/src/main/a.rs#lines-12");
+        assert_eq!(
+            browse_url(w, Some("feat/x"), "./src/a.rs", None, false),
+            "https://bitbucket.org/ws/r/src/feat/x/src/a.rs"
+        );
+        assert_eq!(
+            browse_url(w, Some("main"), "a.rs", Some("12"), false),
+            "https://bitbucket.org/ws/r/src/main/a.rs#lines-12"
+        );
         assert_eq!(
             browse_url(w, Some("abc1234"), "/a.rs", Some("10-20"), true),
             "https://bitbucket.org/ws/r/annotate/abc1234/a.rs#lines-10:20"
@@ -157,7 +165,10 @@ mod tests {
         assert_eq!(classify("12"), Target::Pr("12"));
         assert_eq!(classify("1234567"), Target::Pr("1234567"));
         assert_eq!(classify("77507cd"), Target::Commit("77507cd"));
-        assert_eq!(classify("77507cd94ccafcf568f8560cfecde965fcfa63"), Target::Commit("77507cd94ccafcf568f8560cfecde965fcfa63"));
+        assert_eq!(
+            classify("77507cd94ccafcf568f8560cfecde965fcfa63"),
+            Target::Commit("77507cd94ccafcf568f8560cfecde965fcfa63")
+        );
         assert_eq!(classify("abcdef"), Target::Path("abcdef", None));
         assert_eq!(classify("ABCDEF1"), Target::Path("ABCDEF1", None));
         assert_eq!(classify("src/main.rs"), Target::Path("src/main.rs", None));

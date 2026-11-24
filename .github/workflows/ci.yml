@@ -1,9 +1,11 @@
 name: CI
 
 # Every push to main and every pull request:
-#   test   build + cargo test on macOS, Linux and Windows; macOS runs the tests under
-#          cargo-llvm-cov and uploads lcov.info to Codecov (CODECOV_TOKEN secret)
+#   test   build + cargo test on macOS, Linux and Windows, run under cargo-llvm-cov; each OS
+#          uploads its lcov.info to Codecov (CODECOV_TOKEN secret, one flag per OS), and Codecov
+#          merges the three so platform-specific code is measured on its own platform
 #   clippy cargo clippy --all-targets, warnings are errors
+#   fmt    cargo fmt --check, per rustfmt.toml
 #   deny   cargo deny --locked check (advisories, licenses, bans, sources; see deny.toml)
 #   build  pull requests only: every release target via build.yml, so a PR that would break
 #          a release fails before it is merged. Pushes to main skip it here: the release
@@ -39,21 +41,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: macOS arm64, os: macos-latest, coverage: true }
-          - { name: Linux x86_64, os: ubuntu-latest }
-          - { name: Windows x86_64, os: windows-latest }
+          - { name: macOS arm64, os: macos-latest, flag: macos }
+          - { name: Linux x86_64, os: ubuntu-latest, flag: linux }
+          - { name: Windows x86_64, os: windows-latest, flag: windows }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
-          components: ${{ matrix.coverage && 'llvm-tools-preview' || '' }}
+          components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266  # v2
 
       - name: Install cargo-llvm-cov
-        if: matrix.coverage
         uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2.90.8
         with:
           tool: cargo-llvm-cov
@@ -61,21 +62,17 @@ jobs:
       - name: Build
         run: cargo build --all-targets --locked
 
-      - name: Test
-        if: ${{ !matrix.coverage }}
-        run: cargo test --locked
-
       - name: Test with coverage
-        if: matrix.coverage
         run: cargo llvm-cov --locked --lcov --output-path lcov.info
 
       # Without CODECOV_TOKEN (e.g. fork pull requests) the upload may fail; that never fails CI.
       - name: Upload coverage to Codecov
-        if: matrix.coverage
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
+          flags: ${{ matrix.flag }}
+          name: ${{ matrix.name }}
           fail_ci_if_error: false
 
   # Clippy on all targets (bin and tests); any warning fails the job.
@@ -95,6 +92,22 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
+
+  # Formatting per rustfmt.toml; no build needed.
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
 
   # RustSec advisories, license allow-list, bans and sources, per deny.toml (all release targets).
   deny:

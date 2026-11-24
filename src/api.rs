@@ -1,7 +1,7 @@
 //! `bb api`: authenticated raw request.
-use crate::client::{enc, status_error, url, Client};
+use crate::client::{Client, enc, status_error, url};
 use crate::output::print_json;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Map, Value};
 use std::io::Read;
 
@@ -60,7 +60,9 @@ pub fn run(args: Args) -> Result<()> {
     let fields = fields_map(&args.raw_fields, &args.fields)?;
     let headers = args.headers.iter().map(|h| parse_header(h)).collect::<Result<Vec<_>>>()?;
     let input = match &args.input {
-        Some(f) => Some(serde_json::from_str::<Value>(&read_source(f, "--input")?).context("--input is not valid JSON")?),
+        Some(f) => {
+            Some(serde_json::from_str::<Value>(&read_source(f, "--input")?).context("--input is not valid JSON")?)
+        }
         None => None,
     };
     let method = match args.method {
@@ -124,7 +126,9 @@ fn parse_header(h: &str) -> Result<(String, String)> {
 fn fields_map(raw: &[String], typed: &[String]) -> Result<Map<String, Value>> {
     let mut m = Map::new();
     for (f, is_typed) in raw.iter().map(|f| (f, false)).chain(typed.iter().map(|f| (f, true))) {
-        let (k, v) = f.split_once('=').ok_or_else(|| anyhow!("{} expects key=value, got `{f}`", if is_typed { "-F" } else { "-f" }))?;
+        let (k, v) = f
+            .split_once('=')
+            .ok_or_else(|| anyhow!("{} expects key=value, got `{f}`", if is_typed { "-F" } else { "-f" }))?;
         let v = if is_typed { typed_value(v)? } else { Value::String(v.to_string()) };
         m.insert(k.to_string(), v);
     }
