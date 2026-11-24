@@ -615,7 +615,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 bail!("{failed} check(s) failed");
             }
             if pending > 0 {
-                return Err(Exit::new(exit::PENDING, format!("{pending} check(s) pending")));
+                return Err(Exit::err(exit::PENDING, format!("{pending} check(s) pending")));
             }
         }
     }

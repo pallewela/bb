@@ -646,7 +646,7 @@ mod tests {
 
         let mut seen = HashMap::new();
         let p = json!({"build_number": 7, "state": {"name": "IN_PROGRESS", "stage": {"name": "RUNNING"}}});
-        assert_eq!(changes(&mut seen, &p, &[st.clone()]), ["Pipeline #7: RUNNING", "  Build & Test: IN_PROGRESS"]);
+        assert_eq!(changes(&mut seen, &p, std::slice::from_ref(&st)), ["Pipeline #7: RUNNING", "  Build & Test: IN_PROGRESS"]);
         assert!(changes(&mut seen, &p, &[st]).is_empty());
         let done_st = json!({"name": "Build & Test", "uuid": "{s-1}", "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}});
         let done = json!({"build_number": 7, "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}});
