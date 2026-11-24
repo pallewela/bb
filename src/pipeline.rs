@@ -1,11 +1,11 @@
 //! `bb pipeline` (alias `bb run`): list, view, watch, run, cancel and read logs of Bitbucket Pipelines.
 //! Also `bb workflow run`, where a custom pipeline plays the part of a `gh` workflow.
-use crate::client::{enc, limit_arg, Client};
-use crate::context::{current_branch, Repo};
+use crate::client::{Client, enc, limit_arg};
+use crate::context::{Repo, current_branch};
 use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Args, Subcommand};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 #[derive(Subcommand)]
@@ -131,7 +131,9 @@ pub fn run(cmd: Cmd) -> Result<()> {
             let (limit, chosen) = limit_arg(limit, 20);
             let commit = match commit {
                 // The API only matches full hashes, so expand abbreviated ones first.
-                Some(sha) if sha.len() < 40 => Some(s(&c.get(&format!("{}/commit/{}", repo.api(), enc(&sha)))?, "hash")),
+                Some(sha) if sha.len() < 40 => {
+                    Some(s(&c.get(&format!("{}/commit/{}", repo.api(), enc(&sha)))?, "hash"))
+                }
                 other => other,
             };
             let user_uuid = match user.as_deref().map(user_filter) {
@@ -216,7 +218,11 @@ pub fn run(cmd: Cmd) -> Result<()> {
             if json_mode() {
                 print_json(&p);
             } else if s(&p, "state.name") != "COMPLETED" {
-                eprintln!("Pipeline #{} is {}: it needs a manual action to continue.", s(&p, "build_number"), status(&p));
+                eprintln!(
+                    "Pipeline #{} is {}: it needs a manual action to continue.",
+                    s(&p, "build_number"),
+                    status(&p)
+                );
             }
             check_exit(exit_status, &p)?;
         }
@@ -419,7 +425,10 @@ enum UserFilter {
 fn user_filter(u: &str) -> UserFilter {
     let bare = u.trim().trim_start_matches('{').trim_end_matches('}');
     let is_uuid = bare.len() == 36
-        && bare.chars().enumerate().all(|(i, ch)| if [8, 13, 18, 23].contains(&i) { ch == '-' } else { ch.is_ascii_hexdigit() });
+        && bare
+            .chars()
+            .enumerate()
+            .all(|(i, ch)| if [8, 13, 18, 23].contains(&i) { ch == '-' } else { ch.is_ascii_hexdigit() });
     match u.trim() {
         "@me" => UserFilter::Me,
         _ if is_uuid => UserFilter::Uuid(brace(bare)),
@@ -428,7 +437,9 @@ fn user_filter(u: &str) -> UserFilter {
 }
 
 fn creator_is(p: &Value, name: &str) -> bool {
-    ["creator.nickname", "creator.display_name", "creator.account_id"].iter().any(|k| s(p, k).eq_ignore_ascii_case(name))
+    ["creator.nickname", "creator.display_name", "creator.account_id"]
+        .iter()
+        .any(|k| s(p, k).eq_ignore_ascii_case(name))
 }
 
 /// The API filters by creator UUID only, so look a user name up among recent pipelines (client-side).
@@ -646,7 +657,10 @@ mod tests {
 
         let mut seen = HashMap::new();
         let p = json!({"build_number": 7, "state": {"name": "IN_PROGRESS", "stage": {"name": "RUNNING"}}});
-        assert_eq!(changes(&mut seen, &p, std::slice::from_ref(&st)), ["Pipeline #7: RUNNING", "  Build & Test: IN_PROGRESS"]);
+        assert_eq!(
+            changes(&mut seen, &p, std::slice::from_ref(&st)),
+            ["Pipeline #7: RUNNING", "  Build & Test: IN_PROGRESS"]
+        );
         assert!(changes(&mut seen, &p, &[st]).is_empty());
         let done_st = json!({"name": "Build & Test", "uuid": "{s-1}", "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}});
         let done = json!({"build_number": 7, "state": {"name": "COMPLETED", "result": {"name": "FAILED"}}});

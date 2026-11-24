@@ -56,9 +56,9 @@ real Bitbucket (same requirements as `e2e.sh`, honors a `WORKSPACE` env var, no 
 minutes), and `scripts/skill-eval.sh` checks that Claude Code uses the skill correctly against the
 mock (needs the `claude` CLI and costs API usage).
 
-Before opening a PR, run `cargo test` and `cargo clippy --all-targets -- -D warnings` (CI fails on
-any clippy warning). If you changed how a command talks to Bitbucket, also run
-`scripts/e2e.sh` if you can, and say in the PR whether you did.
+Before opening a PR, run `cargo fmt`, `cargo test` and `cargo clippy --all-targets -- -D warnings`
+(CI fails on unformatted code or any clippy warning). If you changed how a command talks to
+Bitbucket, also run `scripts/e2e.sh` if you can, and say in the PR whether you did.
 
 ## The agent skill tracks the CLI
 

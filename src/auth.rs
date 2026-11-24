@@ -2,7 +2,7 @@
 use crate::client::Client;
 use crate::config::{self, Creds, Source};
 use crate::output::s;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Subcommand;
 use std::io::{self, BufRead, Read, Write};
 
