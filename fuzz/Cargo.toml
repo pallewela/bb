@@ -1,0 +1,34 @@
+# Fuzz targets for the parsers that read untrusted input (cargo-fuzz layout).
+#   cargo +nightly fuzz run repo_parse -- -max_total_time=60
+#   cargo +nightly fuzz run json_path  -- -max_total_time=60
+# Its own workspace, so the main build, `cargo test` and `cargo publish` never see it.
+[package]
+name = "bitbucket-bb-cli-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+serde_json = "1.0.154"
+bitbucket-bb-cli = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "repo_parse"
+path = "fuzz_targets/repo_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "json_path"
+path = "fuzz_targets/json_path.rs"
+test = false
+doc = false
+bench = false

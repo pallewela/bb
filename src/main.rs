@@ -1,15 +1,4 @@
-mod api;
-mod auth;
-mod browse;
-mod client;
-mod config;
-mod context;
-mod exit;
-mod output;
-mod pipeline;
-mod pr;
-mod repo;
-mod workspace;
+use bitbucket_bb_cli::{api, auth, browse, context, exit, output, pipeline, pr, repo, workspace};
 
 use clap::{Parser, Subcommand};
 
