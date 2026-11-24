@@ -103,8 +103,8 @@ the score is a pass rate. `NO_SKILL=1` runs the same cases without the skill, as
 
 Every push to `main` that passes CI is released automatically (`.github/workflows/release.yml`),
 with an archive for each target in [PRD §8](PRD.md):
-the patch version is bumped by default; put `[bump:minor]` or `[bump:major]` in the head commit
-message to bump more, or `[skip release]` to skip. The Homebrew formula in
-[pallewela/homebrew-tap](https://github.com/pallewela/homebrew-tap) is updated afterwards
+the patch version is bumped by default; put `[bump:minor]` or `[bump:major]` in the head commit's
+subject (the PR title, for a squash merge) to bump more, or `[skip release]` to skip. The
+Homebrew formula in [pallewela/homebrew-tap](https://github.com/pallewela/homebrew-tap) is updated afterwards
 (needs the `TAP_REPO_TOKEN` secret), and the crate is published to crates.io when the repository
 variable `CRATES_IO_PUBLISH` is `true`.
