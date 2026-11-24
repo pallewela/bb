@@ -17,8 +17,20 @@ pub fn url(path: &str) -> String {
     if path.starts_with("http://") || path.starts_with("https://") {
         path.to_string()
     } else {
-        format!("{API}/{}", path.trim_start_matches('/'))
+        format!("{}/{}", api_base(), path.trim_start_matches('/'))
     }
+}
+
+/// The API root. Debug builds (what `cargo test` runs) take `BB_TEST_API_URL` so the CLI tests in
+/// tests/ can point `bb` at a local mock server; release builds always use the real API, so a
+/// stray environment variable can never send credentials elsewhere.
+fn api_base() -> String {
+    if cfg!(debug_assertions)
+        && let Some(base) = std::env::var("BB_TEST_API_URL").ok().filter(|b| !b.is_empty())
+    {
+        return base.trim_end_matches('/').to_string();
+    }
+    API.to_string()
 }
 
 impl Client {
