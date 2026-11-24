@@ -1,0 +1,14 @@
+[book]
+title = "bb: a gh-style CLI for Bitbucket Cloud"
+authors = ["pallewela"]
+description = "Documentation for bb, a gh-style command-line tool for Bitbucket Cloud."
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+site-url = "/bb/"
+git-repository-url = "https://github.com/pallewela/bb"
+edit-url-template = "https://github.com/pallewela/bb/edit/main/docs/{path}"

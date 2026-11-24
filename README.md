@@ -13,6 +13,8 @@
 
 A `gh`-style CLI for Bitbucket Cloud. Scope and design: [PRD.md](PRD.md).
 
+Documentation: https://pallewela.github.io/bb/
+
 ## Requirements
 
 - **OS / architecture** (prebuilt binaries): macOS arm64 and x86_64; Linux x86_64 and arm64
