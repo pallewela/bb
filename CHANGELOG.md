@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.10](https://github.com/pallewela/bb/releases/tag/v0.2.10) - 2026-11-24
+
+### Bug fixes
+
+- **context:** require an exact Bitbucket host in Repo::parse ([#41](https://github.com/pallewela/bb/pull/41)) ([69b147c](https://github.com/pallewela/bb/commit/69b147ca8cb26381469f53499f2307ac444bd529))
+
 ## [0.2.9](https://github.com/pallewela/bb/releases/tag/v0.2.9) - 2026-11-24
 
 ### Dependencies
