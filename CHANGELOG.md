@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.11](https://github.com/pallewela/bb/releases/tag/v0.2.11) - 2026-11-24
+
+### Bug fixes
+
+- **deps:** move the HTTP client to ureq 3 ([#45](https://github.com/pallewela/bb/pull/45)) ([3412c75](https://github.com/pallewela/bb/commit/3412c75076684234312959a67298e0bb3ca44988))
+
 ## [0.2.10](https://github.com/pallewela/bb/releases/tag/v0.2.10) - 2026-11-24
 
 ### Bug fixes
