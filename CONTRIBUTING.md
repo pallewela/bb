@@ -19,11 +19,19 @@ CI builds with `--locked`, so commit `Cargo.lock` when you change dependencies.
 
 ## Tests
 
-    cargo test                   # unit tests + the skill's recipes against a mock bb
+    cargo test                   # unit tests, CLI tests against a mock API, the skill's recipes
+    cargo test --test cli_pr     # just one CLI test file (cli_pr, cli_repo, cli_pipeline)
     tests/skill/run.sh           # just the skill recipe tests (cargo test runs this too)
     scripts/e2e.sh               # every command against real Bitbucket Cloud
+    cargo llvm-cov --open        # coverage report (needs cargo-llvm-cov)
 
-**`cargo test`** needs no network or credentials. It includes `tests/skill_recipes.rs`, which runs
+**`cargo test`** needs no network or credentials. The **CLI tests** (`tests/cli_*.rs`) run the
+built `bb` against a local mock of the Bitbucket API (`tests/common/mod.rs`): each test lists the
+routes it answers, runs a command, and checks the requests `bb` sent, its output and its exit
+code. They work because debug builds send API requests to `BB_TEST_API_URL` when it is set;
+release builds ignore it. When you add or change a command, add a CLI test for it.
+
+It also includes `tests/skill_recipes.rs`, which runs
 `tests/skill/run.sh` with `BB_REAL` set to the freshly built `bb`. That test needs `bash` and
 `jq`: it is skipped (with a message) when `jq` is missing, and ignored on Windows. One keychain
 test is `#[ignore]`d because it writes a dummy entry to your real OS keychain; run it with
