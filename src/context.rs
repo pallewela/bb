@@ -26,19 +26,22 @@ impl Repo {
     }
 
     /// Accepts `ws/repo`, `git@[ssh.]bitbucket.org:ws/repo.git`, `https://[user@]bitbucket.org/ws/repo[.git][/...]`.
+    /// A URL's query or fragment is ignored. Both parts must be Bitbucket-style names (ASCII
+    /// letters, digits, `-`, `_`, `.`): they go into API paths and URLs unescaped.
     pub fn parse(s: &str) -> Result<Repo> {
         let s = s.trim();
         let path = match s.split_once("bitbucket.org") {
-            Some((_, rest)) => rest.trim_start_matches([':', '/']),
-            None if !s.contains(':') => s,
-            None => bail!("cannot parse repository `{s}`"),
+            Some((_, rest)) if rest.starts_with([':', '/']) => rest.trim_start_matches([':', '/']),
+            _ if !s.contains(':') => s,
+            _ => bail!("cannot parse repository `{s}`"),
         };
+        let path = path.split(['?', '#']).next().unwrap_or_default();
         let mut parts = path.split('/');
-        match (parts.next(), parts.next()) {
-            (Some(ws), Some(slug)) if !ws.is_empty() && !slug.is_empty() => Ok(Repo {
-                workspace: ws.to_string(),
-                slug: slug.trim_end_matches(".git").to_string(),
-            }),
+        let name = |p: &str| {
+            !matches!(p, "" | "." | "..") && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        };
+        match (parts.next(), parts.next().map(|p| p.trim_end_matches(".git"))) {
+            (Some(ws), Some(slug)) if name(ws) && name(slug) => Ok(Repo { workspace: ws.to_string(), slug: slug.to_string() }),
             _ => bail!("cannot parse repository `{s}` (expected WORKSPACE/REPO)"),
         }
     }
@@ -99,10 +102,27 @@ mod tests {
             "https://user@bitbucket.org/ws/repo.git",
             "https://bitbucket.org/ws/repo",
             "https://bitbucket.org/ws/repo/pull-requests/12",
+            "https://bitbucket.org/ws/repo?at=main",
+            "https://bitbucket.org/ws/repo#readme",
         ] {
             assert_eq!(Repo::parse(s).unwrap(), want, "{s}");
         }
-        for s in ["repo", "git@github.com:ws/repo.git", "", "ws/"] {
+        let odd = Repo { workspace: "my_ws-1".into(), slug: "bitbucket.org".into() };
+        assert_eq!(Repo::parse("my_ws-1/bitbucket.org").unwrap(), odd);
+        assert_eq!(Repo::parse("https://bitbucket.org/my_ws-1/bitbucket.org").unwrap(), odd);
+        // Found by fuzz/fuzz_targets/repo_parse.rs: these used to parse to a bad or empty slug.
+        for s in [
+            "repo",
+            "git@github.com:ws/repo.git",
+            "",
+            "ws/",
+            "ws/.git",
+            "ws/..",
+            "git@ssh.bitbucket.org:ws/repo.gi\0t",
+            "ws/re po",
+            "ws/repo\u{301}",
+            "bitbucket.org.evil:ws/repo",
+        ] {
             assert!(Repo::parse(s).is_err(), "{s}");
         }
     }

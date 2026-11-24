@@ -7,10 +7,10 @@ fuzz_target!(|data: &[u8]| {
     let Ok(s) = std::str::from_utf8(data) else { return };
     let Ok(r) = Repo::parse(s) else { return };
     // A parsed repo names exactly one workspace and one repository. `api()` and `web()` paste
-    // them into URLs unescaped, so a component must not be empty or carry a separator, a URL
-    // query/fragment, whitespace or control characters: the request would go somewhere else.
+    // them into URLs unescaped, so a component must not be empty, `.`/`..`, or carry a separator,
+    // a URL query/fragment, whitespace or control characters: the request would go elsewhere.
     for part in [&r.workspace, &r.slug] {
-        assert!(!part.is_empty(), "empty component: {s:?} -> {r:?}");
+        assert!(!matches!(part.as_str(), "" | "." | ".."), "empty or dot component: {s:?} -> {r:?}");
         assert!(
             !part.chars().any(|c| matches!(c, '/' | '?' | '#') || c.is_whitespace() || c.is_control()),
             "bad character in component: {s:?} -> {r:?}"
