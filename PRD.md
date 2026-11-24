@@ -338,7 +338,9 @@ layer; Bitbucket payloads are large and we read a handful of fields.
 
 ## 8. Releases and supported platforms
 
-Every push to `main` that passes CI is released (`.github/workflows/release.yml`): the patch
+Every push to `main` that passes CI is released: CI's last job calls `.github/workflows/release.yml`
+on the commit it tested, in the same run (no `workflow_run` trigger, so nothing gets write access
+from another workflow's run). The patch
 version is bumped unless the head commit says `[bump:minor]`, `[bump:major]` or `[skip release]`.
 Each release publishes one archive per target, built and checked on a native GitHub runner:
 
@@ -373,8 +375,9 @@ release call, so a release is never partial.
   publish run of `release.yml` (`workflow_dispatch` with `publish_tag`) runs `cargo publish` from
   the tag with the same version stamp as the binaries, using crates.io trusted publishing (GitHub
   OIDC, no stored token), when the repository variable `CRATES_IO_PUBLISH` is `true`; a version
-  that is already on crates.io is skipped, so re-runs are safe. It is a separate run because
-  crates.io refuses trusted-publishing tokens for `workflow_run` runs, which is how releases start.
+  that is already on crates.io is skipped, so re-runs are safe. It is a separate run so that
+  `release.yml`, the workflow registered for trusted publishing, is the top-level workflow (the
+  release itself runs inside CI's run).
   The same run bumps the Homebrew tap, in its own job. The first version is published by hand,
   since trusted publishing can only be set up for a crate that exists. Published versions can be
   yanked but never deleted.

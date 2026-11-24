@@ -1,6 +1,7 @@
 name: Release
 
-# Runs after every successful CI run (ci.yml) for a push to main, on the commit CI tested:
+# Called by CI (ci.yml, workflow_call) for every push to main, after all of CI's checks pass,
+# in the same run and on the commit that run tested:
 #   version  next version = latest vX.Y.Z tag bumped by the marker in the head commit's
 #            subject ([bump:major], [bump:minor], otherwise patch; "BREAKING CHANGE"
 #            anywhere in the message also means major); the first release uses the
@@ -20,22 +21,25 @@ name: Release
 #              bitbucket-bb-cli from the tag (trusted publishing)
 #   homebrew   bumps the tap (pallewela/homebrew-tap) via repository_dispatch when the
 #              TAP_REPO_TOKEN secret is set
-# This is a separate run because crates.io refuses trusted-publishing tokens for workflow_run
-# runs. To retry or catch up by hand: gh workflow run release.yml -f publish_tag=vX.Y.Z
+# This is a separate run so that release.yml is the top-level workflow when crates.io checks
+# the trusted-publishing token (a release itself runs inside CI's run, which is ci.yml's).
+# To retry or catch up by hand: gh workflow run release.yml -f publish_tag=vX.Y.Z
 #
 # Keep this file named release.yml: crates.io trusted publishing is registered for this
 # workflow filename.
 #
-# workflow_run runs with secrets and write access, from this file on the default branch, so
-# it only acts on runs of CI that succeeded for a push (or manual run) on main of this
-# repository, never on pull requests or forks, and it checks out the exact commit CI tested
-# (workflow_run.head_sha), not whatever main points at now.
+# There is no workflow_run trigger: nothing here runs with write access because of another
+# workflow's run, so pull requests and forks can't reach it. CI's release job only runs for
+# pushes (and manual runs) on main, and it grants the write permissions used below.
 
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+    inputs:
+      tested:
+        description: Set by CI, which calls this after its checks passed on this commit.
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       publish_tag:
@@ -46,16 +50,19 @@ on:
         default: ''
         type: string
 
-permissions: read-all
+# Every job sets its own permissions. When CI calls this file, no job can get more than CI's
+# release job grants.
+permissions:
+  contents: read
 
 concurrency:
-  # Queue releases so two never compute the same version. Runs that will do nothing (CI
-  # failed) get their own group, so they can't displace a queued release; so do publish
-  # runs (a group holds only one pending run, and a newer one would cancel it).
+  # Queue releases so two never compute the same version: manual release runs share the
+  # group "release" with CI's release job (which sets it there, so a run called by CI gets a
+  # group of its own here). Publish runs get their own group (a group holds only one pending
+  # run, and a newer one would cancel it).
   group: >-
     ${{ inputs.publish_tag && format('release-publish-{0}', inputs.publish_tag)
-    || ((github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-    && 'release' || format('release-noop-{0}', github.run_id)) }}
+    || inputs.tested && format('release-called-{0}', github.run_id) || 'release' }}
   cancel-in-progress: false
 
 env:
@@ -68,19 +75,16 @@ jobs:
   #                 the commit not tagged yet
   version:
     name: Version
-    # Only trusted triggers: a manual run, or CI that succeeded for a push or manual run on
-    # main of this repository (a fork's PR from its own "main" branch must not match).
+    # A push or manual run on main (called by CI, or a manual run of this file); never a
+    # publish run. CI only calls this for main; this check is a second line of defence.
     if: >-
-      (github.event_name == 'workflow_dispatch' && !inputs.publish_tag) ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
-       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch'))
+      !inputs.publish_tag && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read   # manual runs: look up CI's result for the commit
+      actions: read   # manual runs of this file: look up CI's result for the commit
     outputs:
       publish: ${{ steps.v.outputs.publish }}
       sha: ${{ steps.v.outputs.sha }}
@@ -88,16 +92,16 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
     steps:
-      # The commit CI tested; for a manual run, the commit the run was started on.
+      # The commit this CI run tested; for a manual run of this file, the commit it started on.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Compute next version
         id: v
         env:
-          EVENT: ${{ github.event_name }}
+          TESTED: ${{ inputs.tested }}
           REF: ${{ github.ref }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -110,8 +114,10 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           }
-          if [ "$EVENT" = workflow_dispatch ]; then
-            [ "$REF" = refs/heads/main ] || no_publish "Not on main; not releasing."
+          [ "$REF" = refs/heads/main ] || no_publish "Not on main; not releasing."
+          # Called by CI: its checks just passed on this commit. A manual run of this file
+          # checks that a CI run passed on it.
+          if [ "$TESTED" != true ]; then
             ok=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&status=success&per_page=1" \
               --jq .total_count)
             if [ "$ok" = 0 ]; then
@@ -161,6 +167,8 @@ jobs:
     needs: version
     if: needs.version.outputs.publish == 'true'
     uses: ./.github/workflows/build.yml
+    permissions:
+      contents: read
     with:
       version: ${{ needs.version.outputs.version }}
       ref: ${{ needs.version.outputs.sha }}
@@ -315,10 +323,10 @@ jobs:
           body_path: notes.md
           files: dist/*
 
-      # crates.io refuses trusted-publishing tokens for workflow_run runs, so crates.io and
-      # the Homebrew tap are published by a separate manual (workflow_dispatch) run of this
-      # same file, which crates.io accepts and which keeps the registered filename. A
-      # workflow_dispatch started with GITHUB_TOKEN does create a run (unlike most events).
+      # crates.io and the Homebrew tap are published by a separate manual (workflow_dispatch)
+      # run of this file, so crates.io sees the registered workflow (release.yml) at the top
+      # level (see the header). A workflow_dispatch started with GITHUB_TOKEN does create a
+      # run (unlike most events).
       - name: Start crates.io and Homebrew publishing
         env:
           GH_TOKEN: ${{ github.token }}

@@ -81,7 +81,8 @@ describes old behavior. Reviewers will ask about that.
 ## Commit messages and releases
 
 PRs are usually squash-merged, so the PR title becomes the commit subject on `main`. Every push
-to `main` that passes CI is released by [.github/workflows/release.yml](.github/workflows/release.yml).
+to `main` that passes CI is released by [.github/workflows/release.yml](.github/workflows/release.yml),
+which CI calls as its last job.
 Write the title as a [conventional commit](https://www.conventionalcommits.org/):
 
     feat(pr): add --rebase-merge and --squash-fast-forward to pr merge
