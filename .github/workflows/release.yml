@@ -181,19 +181,24 @@ jobs:
             echo "x86_64_pc_windows_msvc=$(sum x86_64-pc-windows-msvc zip)"
           } | tee -a "$GITHUB_OUTPUT"
 
+      - name: Install git-cliff
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2.90.8
+        with:
+          tool: git-cliff@2.14.2
+
+      # Changes: this version's section of the changelog (cliff.toml), i.e. the commits since
+      # the previous tag, grouped by conventional-commit type.
       - name: Write release notes
         env:
-          PREV: ${{ needs.version.outputs.prev }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          RANGE="${PREV:+${PREV}..}HEAD"
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           WIN="bb-${TAG}-x86_64-pc-windows-msvc.zip"
+          git cliff --unreleased --tag "$TAG" --strip all > changes.md
           {
-            echo "## Changes"
-            echo
-            git log "$RANGE" --no-merges --format='- %s (%h)' | grep -viE '\[skip release\]' || true
+            cat changes.md
+            grep -q '^- ' changes.md || printf 'No notable changes.\n'
             echo
             cat <<'MD'
           ## Install via Homebrew (macOS and Linux)
