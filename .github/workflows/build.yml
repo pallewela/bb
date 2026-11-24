@@ -20,9 +20,9 @@ on:
         type: string
         default: ''
 
-# Only contents: read: a called workflow can't ask for more than its caller grants.
-permissions:
-  contents: read
+# Read only. A called workflow can't ask for more than its caller grants: both callers'
+# build jobs inherit their workflow's top-level read-all, so this fits.
+permissions: read-all
 
 env:
   CARGO_TERM_COLOR: always

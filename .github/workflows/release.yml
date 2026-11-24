@@ -45,8 +45,7 @@ on:
         default: ''
         type: string
 
-permissions:
-  contents: read
+permissions: read-all
 
 concurrency:
   # Queue releases so two never compute the same version. Runs that will do nothing (CI
