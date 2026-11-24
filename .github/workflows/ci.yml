@@ -3,6 +3,7 @@ name: CI
 # Every push to main and every pull request:
 #   test   build + cargo test on macOS, Linux and Windows; macOS runs the tests under
 #          cargo-llvm-cov and uploads lcov.info to Codecov (CODECOV_TOKEN secret)
+#   clippy cargo clippy --all-targets, warnings are errors
 #   deny   cargo deny --locked check (advisories, licenses, bans, sources; see deny.toml)
 #   build  pull requests only: every release target via build.yml, so a PR that would break
 #          a release fails before it is merged. Pushes to main skip it here: the release
@@ -76,6 +77,24 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: false
+
+  # Clippy on all targets (bin and tests); any warning fails the job.
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@eedcf2fb1c22f010a0eb66b92f378c110977f266  # v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   # RustSec advisories, license allow-list, bans and sources, per deny.toml (all release targets).
   deny:

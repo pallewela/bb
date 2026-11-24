@@ -12,7 +12,7 @@ pub struct Exit {
 }
 
 impl Exit {
-    pub fn new(code: i32, msg: impl Into<String>) -> anyhow::Error {
+    pub fn err(code: i32, msg: impl Into<String>) -> anyhow::Error {
         anyhow::Error::new(Exit { code, msg: msg.into() })
     }
 }
@@ -37,8 +37,8 @@ mod tests {
     #[test]
     fn codes() {
         assert_eq!(code(&anyhow::anyhow!("plain")), 1);
-        assert_eq!(code(&Exit::new(PENDING, "2 pending")), 8);
-        assert_eq!(code(&Exit::new(AUTH_REQUIRED, "login").context("while listing")), 4);
-        assert_eq!(Exit::new(4, "not logged in").to_string(), "not logged in");
+        assert_eq!(code(&Exit::err(PENDING, "2 pending")), 8);
+        assert_eq!(code(&Exit::err(AUTH_REQUIRED, "login").context("while listing")), 4);
+        assert_eq!(Exit::err(4, "not logged in").to_string(), "not logged in");
     }
 }
