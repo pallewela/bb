@@ -26,8 +26,9 @@ impl Repo {
     }
 
     /// Accepts `ws/repo`, `git@[ssh.]bitbucket.org:ws/repo.git`, `https://[user@]bitbucket.org/ws/repo[.git][/...]`.
-    /// A URL's query or fragment is ignored. Both parts must be Bitbucket-style names (ASCII
-    /// letters, digits, `-`, `_`, `.`): they go into API paths and URLs unescaped.
+    /// A URL's query or fragment is ignored. Both parts must be Bitbucket-style names, since they
+    /// go into API paths and URLs unescaped: a workspace ID is ASCII letters, digits, `-` and `_`;
+    /// a repository slug may also contain `.`.
     pub fn parse(s: &str) -> Result<Repo> {
         let s = s.trim();
         let path = match s.split_once("bitbucket.org") {
@@ -37,11 +38,12 @@ impl Repo {
         };
         let path = path.split(['?', '#']).next().unwrap_or_default();
         let mut parts = path.split('/');
-        let name = |p: &str| {
-            !matches!(p, "" | "." | "..") && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        let name = |p: &str, dots: bool| {
+            !matches!(p, "" | "." | "..")
+                && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_') || (dots && c == '.'))
         };
         match (parts.next(), parts.next().map(|p| p.trim_end_matches(".git"))) {
-            (Some(ws), Some(slug)) if name(ws) && name(slug) => Ok(Repo { workspace: ws.to_string(), slug: slug.to_string() }),
+            (Some(ws), Some(slug)) if name(ws, false) && name(slug, true) => Ok(Repo { workspace: ws.to_string(), slug: slug.to_string() }),
             _ => bail!("cannot parse repository `{s}` (expected WORKSPACE/REPO)"),
         }
     }
@@ -122,6 +124,10 @@ mod tests {
             "ws/re po",
             "ws/repo\u{301}",
             "bitbucket.org.evil:ws/repo",
+            // Workspace IDs have no dots: this used to parse to workspace `bitbucket.org`, slug `ws`.
+            "https://bitbucket.org/bitbucket.org/ws/repo/pull-re/1/ws/repo/pull-re/10",
+            "bitbucket.org/ws",
+            "my.ws/repo",
         ] {
             assert!(Repo::parse(s).is_err(), "{s}");
         }
