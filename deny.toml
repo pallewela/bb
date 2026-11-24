@@ -1,0 +1,77 @@
+# cargo-deny configuration: `cargo deny --locked check` (run in CI by the "Dependency checks"
+# job in .github/workflows/release.yml). Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+# Check the dependency graph of every platform bb ships for (see the build matrix in
+# release.yml) plus linux-gnu for local/CI test builds, so platform-only crates (keyring's
+# zbus backend on Linux, windows-sys on Windows, security-framework on macOS) are covered.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "x86_64-pc-windows-msvc",
+]
+all-features = false
+no-default-features = false
+
+[output]
+feature-depth = 1
+
+[advisories]
+# RustSec advisory database. Vulnerabilities, unsound, yanked and (since cargo-deny 0.18)
+# unmaintained crates in the graph fail the check.
+unmaintained = "all"
+yanked = "deny"
+# Every entry needs a reason (and ideally a link) explaining why it is safe to ignore.
+ignore = [
+    # zvariant, zvariant_derive and zbus_names were merged into zbus 6. They reach bb only on
+    # Linux (keyring -> zbus-secret-service-keyring-store / secret-service -> zbus 5), and no
+    # release of those crates supports zbus 6 yet, so there is no upgrade path. These are
+    # "unmaintained" notices, not vulnerabilities. Remove once keyring's Secret Service store
+    # moves to zbus 6 (https://github.com/z-galaxy/zbus/issues/2043).
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6); Linux-only via keyring, no upgrade path yet" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6); Linux-only via keyring, no upgrade path yet" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6); Linux-only via keyring, no upgrade path yet" },
+]
+
+[licenses]
+# Allow-list derived from `cargo deny list` over the targets above. Add a license here only
+# after checking it is compatible with bb's MIT license.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception", # rustix, linux-raw-sys
+    "BSD-3-Clause",                   # subtle
+    "ISC",                            # ring, rustls, rustls-webpki, untrusted
+    "Unicode-3.0",                    # icu_* (via url / idna)
+    "Unlicense",                      # memchr, aho-corasick, byteorder (dual with MIT)
+    "Zlib",                           # miniz_oxide (dual with MIT / Apache-2.0)
+    "0BSD",                           # adler2 (dual with MIT / Apache-2.0)
+    "CDLA-Permissive-2.0",            # webpki-roots (Mozilla's CA bundle data)
+]
+# ring >= 0.17 declares "Apache-2.0 AND ISC" in Cargo.toml, so no [[licenses.clarify]] is needed.
+confidence-threshold = 0.8
+exceptions = []
+
+[licenses.private]
+ignore = false
+
+[bans]
+# Duplicate versions are common transitively (e.g. two webpki-roots, syn 2 and 3); warn only.
+multiple-versions = "warn"
+wildcards = "deny"
+# Path dependencies of this workspace are allowed to be wildcards.
+allow-wildcard-paths = true
+highlight = "all"
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+# Only crates.io; no git or alternative registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
