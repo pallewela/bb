@@ -365,6 +365,14 @@ never partial.
 - **Homebrew** (`pallewela/tap/bb`) covers macOS and Linux, arm64 and x86_64: the release sends
   each archive's SHA256 to the tap, whose workflow rewrites `Formula/bb.rb` with one URL per
   platform.
+- **crates.io:** the crate is `bitbucket-bb-cli` (`bb`, `bb-cli` and `bitbucket-cli` belong to
+  other projects); `[[bin]] name = "bb"` keeps the command `bb`. It ships only `src/`,
+  `Cargo.toml`, `Cargo.lock`, `README.md` and `LICENSE`. The release job runs `cargo publish` with
+  the same version stamp as the binaries, using crates.io trusted publishing (GitHub OIDC, no
+  stored token), when the repository variable `CRATES_IO_PUBLISH` is `true`; a version that is
+  already on crates.io is skipped, so re-runs are safe. The first version is published by hand,
+  since trusted publishing can only be set up for a crate that exists. Published versions can be
+  yanked but never deleted.
 - **Windows** installs from the `.zip` by hand for now. *Gap:* no Scoop or winget package yet, and
   the binary is unsigned, so SmartScreen may warn the first time it runs.
 - Not built: Windows arm64, 32-bit targets, FreeBSD. They can be added as matrix rows when asked for.

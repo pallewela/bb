@@ -6,9 +6,12 @@ A `gh`-style CLI for Bitbucket Cloud. Scope and design: [PRD.md](PRD.md).
 
     brew install pallewela/tap/bb      # macOS and Linux (arm64 and x86_64)
     brew update && brew upgrade pallewela/tap/bb   # upgrade later
-    cargo install --path .             # from source
+    cargo install bitbucket-bb-cli     # from crates.io (builds from source; installs `bb`)
+    cargo install --path .             # from a clone
 
 Always use the full name `pallewela/tap/bb` with brew: plain `bb` also matches an unrelated cask.
+On crates.io the crate is `bitbucket-bb-cli` (`bb` and `bb-cli` are other projects); building it
+needs Rust and a C compiler.
 
 Prebuilt binaries for macOS (Apple silicon, Intel), Linux (x86_64, arm64; static, any distro) and
 Windows (x86_64, `.zip`) are on the [releases page](https://github.com/pallewela/bb/releases).
@@ -103,4 +106,5 @@ with an archive for each target in [PRD §8](PRD.md):
 the patch version is bumped by default; put `[bump:minor]` or `[bump:major]` in the head commit
 message to bump more, or `[skip release]` to skip. The Homebrew formula in
 [pallewela/homebrew-tap](https://github.com/pallewela/homebrew-tap) is updated afterwards
-(needs the `TAP_REPO_TOKEN` secret).
+(needs the `TAP_REPO_TOKEN` secret), and the crate is published to crates.io when the repository
+variable `CRATES_IO_PUBLISH` is `true`.
