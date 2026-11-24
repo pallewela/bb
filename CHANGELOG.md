@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.8](https://github.com/pallewela/bb/releases/tag/v0.2.8) - 2026-11-24
+
+### Build and CI
+
+- **deny:** add cargo-deny checks and Dependabot ([#31](https://github.com/pallewela/bb/pull/31)) ([8878bd9](https://github.com/pallewela/bb/commit/8878bd97450e2936676d9b3f2ac921db2c0f5109))
+
 ## [0.2.7](https://github.com/pallewela/bb/releases/tag/v0.2.7) - 2026-11-24
 
 ### Features
