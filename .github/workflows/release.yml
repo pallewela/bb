@@ -193,7 +193,10 @@ jobs:
           tool: git-cliff@2.14.2
 
       # Changes: this version's section of the changelog (cliff.toml), i.e. the commits since
-      # the previous tag, grouped by conventional-commit type.
+      # the previous tag, grouped by conventional-commit type. Normally the tag doesn't exist
+      # yet (the next step creates it), so those commits are "unreleased". When re-running
+      # this job after a late failure, the tag already points at HEAD and --unreleased would
+      # be empty, so use that tag's own section instead.
       - name: Write release notes
         env:
           TAG: ${{ needs.version.outputs.tag }}
@@ -201,7 +204,12 @@ jobs:
           set -euo pipefail
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           WIN="bb-${TAG}-x86_64-pc-windows-msvc.zip"
-          git cliff --unreleased --tag "$TAG" --strip all > changes.md
+          git fetch -q --force --tags origin
+          if git tag --points-at HEAD | grep -qxF "$TAG"; then
+            git cliff --current --strip all > changes.md
+          else
+            git cliff --unreleased --tag "$TAG" --strip all > changes.md
+          fi
           {
             cat changes.md
             grep -q '^- ' changes.md || printf 'No notable changes.\n'
