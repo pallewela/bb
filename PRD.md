@@ -351,8 +351,10 @@ Each release publishes one archive per target, built and checked on a native Git
 | `x86_64-pc-windows-msvc` | Windows x86_64 | `windows-latest` | `.zip` (`bb.exe`) | runs `bb --version` |
 
 Archives are named `bb-vX.Y.Z-TARGET.{tar.gz,zip}`, contain the binary, `LICENSE` and `README.md`,
-and come with a `.sha256` file. All of them are published in one release call, so a release is
-never partial.
+and come with a `.sha256` file. The release also carries a signed SLSA build provenance
+attestation for all archives (`bb-vX.Y.Z.intoto.jsonl`, made with `actions/attest-build-provenance`
+and also stored by GitHub, so `gh attestation verify` works). All of them are published in one
+release call, so a release is never partial.
 
 - **Linux binaries are static (musl).** One file works on every distro, old or new, and in Alpine
   or scratch containers; there is no glibc version to match. This is possible because no
