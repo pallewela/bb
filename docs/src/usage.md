@@ -34,6 +34,10 @@ Data goes to stdout. Hints, prompts, notes and errors go to stderr.
 Where offered, `-w, --web` opens the resource in the browser instead of printing it (`open` on
 macOS, `xdg-open` on Linux, `rundll32 url.dll,FileProtocolHandler` on Windows).
 
+To use another browser, set `BB_BROWSER` (or `BROWSER`, which `bb` reads when `BB_BROWSER` is
+unset) to a command, e.g. `BB_BROWSER="firefox --new-window"`. `bb` splits it on spaces and passes
+the URL as the last argument, without a shell. `bb browse` uses the same setting.
+
 ## Command aliases
 
 | `gh` name | Bitbucket name |

@@ -904,9 +904,11 @@ fn delete_local_branch(src: &str, dest: &str) {
         eprintln!("bb: warning: could not switch to {dest} ({e:#}); keeping local branch {src}");
         return;
     }
-    match context::git_passthrough(&["branch", "-D", src]) {
-        Ok(()) if !output::json_mode() => println!("Deleted local branch {src}"),
-        Ok(()) => {}
+    // Captured, not passed through: git prints "Deleted branch ..." on stdout, which would
+    // corrupt --json output. Our own message below says the same thing.
+    match context::git(&["branch", "-D", src]) {
+        Ok(_) if !output::json_mode() => println!("Deleted local branch {src}"),
+        Ok(_) => {}
         Err(e) => eprintln!("bb: warning: could not delete local branch {src} ({e:#})"),
     }
 }

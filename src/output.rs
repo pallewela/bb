@@ -76,7 +76,13 @@ fn more_text(shown: usize, total: Option<u64>, noun: &str, order: &str) -> Strin
     format!("{what}{order}. Use -L N to see more, or -L 0 for all.")
 }
 
+/// Open `url` with `$BB_BROWSER` or `$BROWSER` (as `gh` does with `$GH_BROWSER`/`$BROWSER`), else
+/// the platform's default handler.
 pub fn open_browser(url: &str) -> Result<()> {
+    let custom = ["BB_BROWSER", "BROWSER"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()));
+    if let Some(browser) = custom {
+        return run_browser(&browser, url);
+    }
     let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
         ("open", &[])
     } else if cfg!(windows) {
@@ -86,6 +92,22 @@ pub fn open_browser(url: &str) -> Result<()> {
         ("xdg-open", &[])
     };
     std::process::Command::new(cmd).args(args).arg(url).status().with_context(|| format!("could not open {url}"))?;
+    Ok(())
+}
+
+/// Run a user-chosen browser command: words split on whitespace, the URL appended as the last
+/// argument (no shell, so the URL's `&` and `?` reach the browser intact).
+fn run_browser(browser: &str, url: &str) -> Result<()> {
+    let mut words = browser.split_whitespace();
+    let cmd = words.next().unwrap_or_default();
+    let status = std::process::Command::new(cmd)
+        .args(words)
+        .arg(url)
+        .status()
+        .with_context(|| format!("could not run browser `{browser}` for {url}"))?;
+    if !status.success() {
+        anyhow::bail!("browser `{browser}` failed for {url} ({status})");
+    }
     Ok(())
 }
 

@@ -8,7 +8,7 @@
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::{Arc, Mutex};
 
@@ -128,7 +128,15 @@ impl Mock {
 
     /// Like `bb`, with extra environment variables.
     pub fn bb_with(&self, args: &[&str], env: &[(&str, &str)]) -> Run {
+        self.bb_in(None, args, env)
+    }
+
+    /// Like `bb_with`, run in `dir` (e.g. a `GitRepo`) instead of an empty directory.
+    pub fn bb_in(&self, dir: Option<&Path>, args: &[&str], env: &[(&str, &str)]) -> Run {
         let mut cmd = bb_command(args);
+        if let Some(d) = dir {
+            cmd.current_dir(d);
+        }
         cmd.env("BB_TEST_API_URL", &self.base).env("BITBUCKET_EMAIL", "me@example.com").env("BITBUCKET_TOKEN", "tok");
         for (k, v) in env {
             cmd.env(k, v);
@@ -138,7 +146,8 @@ impl Mock {
 }
 
 /// `bb args...` with a clean environment: no credentials, no API override, config in an empty
-/// temp dir, and a working directory outside any git repo.
+/// temp dir, and a working directory outside any git repo. The browser is a command that does
+/// not exist, so a test that opens one without a `Browser` fails instead of opening a real one.
 pub fn bb_command(args: &[&str]) -> Command {
     let dir = scratch_dir();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_bb"));
@@ -148,14 +157,17 @@ pub fn bb_command(args: &[&str]) -> Command {
         .env_remove("BITBUCKET_EMAIL")
         .env_remove("BITBUCKET_TOKEN")
         .env_remove("BB_TEST_API_URL")
+        .env_remove("BROWSER")
+        .env("BB_BROWSER", "bb-test-no-browser")
         .env("XDG_CONFIG_HOME", dir.join("config"))
-        .env("GIT_CEILING_DIRECTORIES", &dir)
+        // Git must not search above the scratch dir, or it finds the checkout of bb itself.
+        .env("GIT_CEILING_DIRECTORIES", dir.parent().unwrap())
         .env("NO_COLOR", "1");
     cmd
 }
 
-/// A fresh empty directory under target/ for one `bb` run.
-fn scratch_dir() -> PathBuf {
+/// A fresh empty directory under target/.
+pub fn scratch_dir() -> PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static N: AtomicUsize = AtomicUsize::new(0);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
@@ -236,4 +248,90 @@ fn render(status: u16, content_type: &str, body: &str) -> String {
         "HTTP/1.1 {status} X\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
     )
+}
+
+/// A stand-in browser that records the URL it is asked to open. It is `git config --file F
+/// test.url`, which stores its last argument (the URL) in F: git is on every CI runner, unlike a
+/// shell script, and runs without a shell, so `&` and `?` in URLs survive on Windows too.
+pub struct Browser {
+    file: PathBuf,
+}
+
+impl Browser {
+    pub fn new() -> Browser {
+        Browser { file: scratch_dir().join("opened") }
+    }
+
+    /// The `("BB_BROWSER", ...)` pair to pass to `bb_with`/`bb_in`.
+    pub fn env(&self) -> (&'static str, String) {
+        ("BB_BROWSER", format!("git config --file {} test.url", self.file.display()))
+    }
+
+    /// The URL `bb` opened, or None if it opened nothing.
+    pub fn opened(&self) -> Option<String> {
+        let out =
+            Command::new("git").args(["config", "--file"]).arg(&self.file).args(["--get", "test.url"]).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+}
+
+impl Mock {
+    /// Run `bb args...` with `browser` as the browser and return the URL it opened.
+    #[track_caller]
+    pub fn opened(&self, args: &[&str]) -> String {
+        let browser = Browser::new();
+        let (k, v) = browser.env();
+        self.bb_with(args, &[(k, &v)]).ok();
+        browser.opened().expect("bb opened no URL")
+    }
+}
+
+/// A throwaway git repository on branch `main` with one commit, and `origin` set to a
+/// Bitbucket URL (`git@bitbucket.org:ws/r.git`) so `bb` finds the repository without -R.
+pub struct GitRepo {
+    pub dir: PathBuf,
+}
+
+impl GitRepo {
+    pub fn new() -> GitRepo {
+        let dir = scratch_dir().join("repo");
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = GitRepo { dir };
+        repo.git(&["init", "-q", "-b", "main"]);
+        repo.git(&["remote", "add", "origin", "git@bitbucket.org:ws/r.git"]);
+        repo.commit("Initial commit", "");
+        repo
+    }
+
+    /// A bare repository to use as a real, fetchable remote (for `git fetch`/`clone`).
+    pub fn bare() -> PathBuf {
+        let dir = scratch_dir().join("remote.git");
+        let out = Command::new("git").args(["init", "-q", "--bare", "-b", "main"]).arg(&dir).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        dir
+    }
+
+    /// Run git here with a fixed identity; panics on failure; returns trimmed stdout.
+    #[track_caller]
+    pub fn git(&self, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"])
+            .args(args)
+            .current_dir(&self.dir)
+            .output()
+            .expect("could not run git");
+        assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// An empty commit with this subject and body; returns its hash.
+    pub fn commit(&self, subject: &str, body: &str) -> String {
+        let msg = if body.is_empty() { subject.to_string() } else { format!("{subject}\n\n{body}") };
+        self.git(&["commit", "-q", "--allow-empty", "-m", &msg]);
+        self.git(&["rev-parse", "HEAD"])
+    }
+
+    pub fn branch(&self) -> String {
+        self.git(&["branch", "--show-current"])
+    }
 }
