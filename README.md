@@ -1,6 +1,25 @@
 # bb
 
+[![CI](https://github.com/pallewela/bb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pallewela/bb/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/pallewela/bb/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/pallewela/bb/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/pallewela/bb/branch/main/graph/badge.svg)](https://codecov.io/gh/pallewela/bb)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/pallewela/bb/badge)](https://scorecard.dev/viewer/?uri=github.com/pallewela/bb)
+[![Release](https://img.shields.io/github/v/release/pallewela/bb)](https://github.com/pallewela/bb/releases/latest)
+[![Last release](https://img.shields.io/github/release-date/pallewela/bb)](https://github.com/pallewela/bb/releases)
+[![License](https://img.shields.io/github/license/pallewela/bb)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#requirements)
+[![Homebrew tap](https://img.shields.io/badge/brew-pallewela%2Ftap%2Fbb-orange?logo=homebrew)](https://github.com/pallewela/homebrew-tap)
+[![crates.io](https://img.shields.io/crates/v/bitbucket-bb-cli.svg?logo=rust)](https://crates.io/crates/bitbucket-bb-cli)
+
 A `gh`-style CLI for Bitbucket Cloud. Scope and design: [PRD.md](PRD.md).
+
+## Requirements
+
+- **OS / architecture** (prebuilt binaries): macOS arm64 and x86_64; Linux x86_64 and arm64
+  (static musl, any distro); Windows x86_64.
+- **git** on your `PATH`: `bb` uses it to find the repo, branch and commits of the clone you run it
+  in, and for `pr checkout` (not needed with `-R WORKSPACE/REPO` for most commands).
+- **Network access** to `api.bitbucket.org` (HTTPS).
 
 ## Install
 
