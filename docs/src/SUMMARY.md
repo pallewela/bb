@@ -1,0 +1,19 @@
+# Summary
+
+[Introduction](introduction.md)
+
+- [Install](install.md)
+- [Authentication](auth.md)
+- [Usage and conventions](usage.md)
+- [Command reference](reference/index.md)
+  - [bb auth](reference/auth.md)
+  - [bb repo](reference/repo.md)
+  - [bb workspace (org)](reference/workspace.md)
+  - [bb pr](reference/pr.md)
+  - [bb pipeline (run)](reference/pipeline.md)
+  - [bb workflow](reference/workflow.md)
+  - [bb api](reference/api.md)
+  - [bb browse](reference/browse.md)
+- [JSON output and exit codes](json-and-exit-codes.md)
+- [Agent skill](agent-skill.md)
+- [Releases and platforms](releases.md)
