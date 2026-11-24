@@ -1,0 +1,132 @@
+name: Build
+
+# Reusable: one release archive (+ .sha256) per target, each built and checked on a
+# native runner (PRD §8), uploaded as the artifact bb-<target>. Called by
+#   ci.yml       on pull requests, so a PR proves every release target still builds
+#   release.yml  before publishing, with the version computed there
+# Never publishes anything itself.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version stamped into the binary and archive names (no leading v; empty = Cargo.toml's)
+        required: false
+        type: string
+        default: ''
+      ref:
+        description: Commit to build (empty = the caller's commit)
+        required: false
+        type: string
+        default: ''
+
+# Only contents: read: a called workflow can't ask for more than its caller grants.
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-apple-darwin,        os: macos-latest }      # cross-built: can't run here
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Resolve version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          V="${INPUT_VERSION:-$(sed -nE 's/^version = "(.*)"/\1/p' Cargo.toml | head -n1)}"
+          echo "Building version ${V}"
+          echo "VERSION=${V}" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+        with:
+          key: ${{ matrix.target }}
+
+      # ring compiles some C; musl targets need musl-gcc (from musl-tools) for it.
+      - name: Install musl tools
+        if: contains(matrix.target, '-musl')
+        run: sudo apt-get update -q && sudo apt-get install -y -q musl-tools
+
+      - name: Build release binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          # Stamp the tag's version into the binary (bb --version). Not --locked: the stamp
+          # changes bb's own version in Cargo.lock.
+          sed -i.bak -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          rm Cargo.toml.bak
+          cargo build --release --target "$TARGET"
+
+      - name: Check the binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          BIN="target/$TARGET/release/bb"; [ -f "$BIN.exe" ] && BIN="$BIN.exe"
+          file "$BIN" || true
+          case "$TARGET" in
+            x86_64-apple-darwin)
+              lipo -archs "$BIN" | grep -qx x86_64 ;;       # an arm64 runner can't run it
+            *-linux-musl)
+              "$BIN" --version | grep -qx "bb ${VERSION}"
+              # Static: no dynamic loader or shared libraries.
+              if ldd "$BIN" 2>&1 | grep -q '=>'; then ldd "$BIN"; echo "::error::not static"; exit 1; fi ;;
+            *)
+              "$BIN" --version | tr -d '\r' | grep -qx "bb ${VERSION}" ;;
+          esac
+
+      - name: Package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          STAGE="$(mktemp -d)"
+          cp LICENSE README.md "$STAGE/"
+          mkdir -p dist
+          if [[ "$TARGET" == *windows* ]]; then
+            cp "target/$TARGET/release/bb.exe" "$STAGE/"
+            ARCHIVE="bb-v${VERSION}-${TARGET}.zip"
+            (cd "$STAGE" && 7z a -tzip -bso0 "$OLDPWD/dist/$ARCHIVE" bb.exe LICENSE README.md)
+          else
+            cp "target/$TARGET/release/bb" "$STAGE/"
+            ARCHIVE="bb-v${VERSION}-${TARGET}.tar.gz"
+            tar -C "$STAGE" -czf "dist/$ARCHIVE" bb LICENSE README.md
+          fi
+          cd dist
+          # "SUM  NAME" everywhere: Git Bash's sha256sum writes "SUM *NAME" (binary mode) on Windows.
+          if command -v sha256sum >/dev/null; then sha256sum "$ARCHIVE"; else shasum -a 256 "$ARCHIVE"; fi |
+            sed 's/ \*/  /' > "$ARCHIVE.sha256"
+          cat "$ARCHIVE.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bb-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
