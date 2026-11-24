@@ -11,6 +11,8 @@ name: Release
 #            variable CRATES_IO_PUBLISH is "true", `cargo publish` of bitbucket-bb-cli
 #            (trusted publishing); then the Homebrew tap (pallewela/homebrew-tap) is bumped
 #            via repository_dispatch when the TAP_REPO_TOKEN secret is set.
+#   changelog  a PR that regenerates CHANGELOG.md up to the new tag (git-cliff), opened with
+#            the CHANGELOG_TOKEN secret; merging it does not release. Warns if the secret is unset.
 # A manual run (workflow_dispatch) on main releases main's HEAD if CI passed on it; running
 # CI manually on main does the same after testing it again.
 #
@@ -185,19 +187,32 @@ jobs:
             echo "x86_64_pc_windows_msvc=$(sum x86_64-pc-windows-msvc zip)"
           } | tee -a "$GITHUB_OUTPUT"
 
+      - name: Install git-cliff
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2.90.8
+        with:
+          tool: git-cliff@2.14.2
+
+      # Changes: this version's section of the changelog (cliff.toml), i.e. the commits since
+      # the previous tag, grouped by conventional-commit type. Normally the tag doesn't exist
+      # yet (the next step creates it), so those commits are "unreleased". When re-running
+      # this job after a late failure, the tag already points at HEAD and --unreleased would
+      # be empty, so use that tag's own section instead.
       - name: Write release notes
         env:
-          PREV: ${{ needs.version.outputs.prev }}
           TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          RANGE="${PREV:+${PREV}..}HEAD"
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
           WIN="bb-${TAG}-x86_64-pc-windows-msvc.zip"
+          git fetch -q --force --tags origin
+          if git tag --points-at HEAD | grep -qxF "$TAG"; then
+            git cliff --current --strip all > changes.md
+          else
+            git cliff --unreleased --tag "$TAG" --strip all > changes.md
+          fi
           {
-            echo "## Changes"
-            echo
-            git log "$RANGE" --no-merges --format='- %s (%h)' | grep -viE '\[skip release\]' || true
+            cat changes.md
+            grep -q '^- ' changes.md || printf 'No notable changes.\n'
             echo
             cat <<'MD'
           ## Install via Homebrew (macOS and Linux)
@@ -356,3 +371,98 @@ jobs:
           done
           echo "::error::Tap formula did not update to ${VERSION} within 3 minutes."
           exit 1
+
+  # After a release, open (or update) a PR that regenerates CHANGELOG.md up to the new tag.
+  # main is protected, so this never pushes to main. It uses the CHANGELOG_TOKEN secret (a
+  # fine-grained PAT or GitHub App token for this repository, Contents and Pull requests read
+  # & write): a PR opened with GITHUB_TOKEN would not run CI, so it could never merge. Without
+  # the secret it only warns. The commit subject and PR title end with the skip-release marker,
+  # so merging the PR does not release, and cliff.toml leaves the commit out of the changelog.
+  # It never fails the workflow: the release is already out.
+  changelog:
+    name: Changelog PR
+    needs: [version, release]
+    # Also after a release job that failed late (e.g. the tap check); the script checks
+    # that the tag exists.
+    if: ${{ !cancelled() && needs.version.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Check changelog token presence
+        id: token
+        env:
+          CHANGELOG_TOKEN: ${{ secrets.CHANGELOG_TOKEN }}
+        run: |
+          if [ -n "${CHANGELOG_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::CHANGELOG_TOKEN secret is not set; not opening a CHANGELOG.md PR."
+          fi
+
+      # main's tip (not the released commit): the PR's branch starts from it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.CHANGELOG_TOKEN }}
+
+      - name: Install git-cliff
+        if: steps.token.outputs.present == 'true'
+        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c  # v2.90.8
+        with:
+          tool: git-cliff@2.14.2
+
+      - name: Open or update the CHANGELOG.md PR
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CHANGELOG_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch -q --force --tags origin
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "::warning::Tag ${TAG} does not exist (release not published); no CHANGELOG.md PR."
+            exit 0
+          fi
+          # Generate at the tag, with main's cliff.toml: commits merged after the release
+          # wait for the next one.
+          git worktree add -q --detach "$RUNNER_TEMP/at-tag" "$TAG"
+          git cliff --config cliff.toml --repository "$RUNNER_TEMP/at-tag" -o CHANGELOG.md
+          git worktree remove --force "$RUNNER_TEMP/at-tag"
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md on main is already up to date for ${TAG}."
+            exit 0
+          fi
+
+          BRANCH="changelog/${TAG}"
+          TITLE="docs(changelog): update for ${TAG} [skip release]"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -q -C "$BRANCH"
+          git add CHANGELOG.md
+          git commit -q -m "$TITLE" -m "Regenerated with git-cliff (cliff.toml) after the ${TAG} release."
+          # A re-run rebuilds the branch from main's current tip.
+          git push -q --force origin "HEAD:refs/heads/${BRANCH}"
+
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          NOTES_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          BODY="CHANGELOG.md regenerated with git-cliff up to the [${TAG} release](${NOTES_URL}), opened by the [Release workflow](${RUN_URL}). The title carries the skip-release marker, so merging this PR does not publish a release."
+          PR=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$PR" ]; then
+            echo "PR #${PR} is already open for ${BRANCH}; its branch was updated."
+          else
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi
+
+          # Older changelog PRs still open are superseded by this one.
+          export BRANCH
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("changelog/")) | select(.headRefName != env.BRANCH) | .number' |
+            while read -r old; do
+              gh pr close "$old" --delete-branch --comment "Superseded by the CHANGELOG.md PR for ${TAG}." || true
+            done
