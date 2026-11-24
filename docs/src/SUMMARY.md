@@ -17,3 +17,4 @@
 - [JSON output and exit codes](json-and-exit-codes.md)
 - [Agent skill](agent-skill.md)
 - [Releases and platforms](releases.md)
+- [Feedback and contributing](contributing.md)
