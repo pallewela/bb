@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.9](https://github.com/pallewela/bb/releases/tag/v0.2.9) - 2026-11-24
+
+### Dependencies
+
+- **deps:** Bump clap ([#37](https://github.com/pallewela/bb/pull/37)) ([d9562b1](https://github.com/pallewela/bb/commit/d9562b13813e9b5fb755731d9c99dd1a0174ec9d))
+
 ## [0.2.8](https://github.com/pallewela/bb/releases/tag/v0.2.8) - 2026-11-24
 
 ### Build and CI
