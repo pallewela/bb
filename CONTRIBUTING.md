@@ -79,16 +79,21 @@ Write the title as a [conventional commit](https://www.conventionalcommits.org/)
     fix(windows): store hosts.json in %APPDATA%
     docs: ...    ci(release): ...    test(skill): ...    chore(deps): ...
 
-Use short bullets in the body for what changed and why. The squash commit's message (title or body)
-picks the next version from the latest `vX.Y.Z` tag:
+Use short bullets in the body for what changed and why. Markers in the squash commit's **subject**
+pick the next version from the latest `vX.Y.Z` tag; the same text in the body is ignored, so
+the body can mention a marker without triggering it. Only `BREAKING CHANGE` counts anywhere in
+the message, as conventional commits define it.
 
-| Marker in the commit message           | Release                              |
-| -------------------------------------- | ------------------------------------ |
-| `[bump:major]` or `BREAKING CHANGE`    | major: `1.4.2` -> `2.0.0`            |
-| `[bump:minor]`                         | minor: `1.4.2` -> `1.5.0`            |
-| none                                   | patch: `1.4.2` -> `1.4.3` (default)  |
-| `[skip release]`                       | no release                           |
+| Marker                                          | Release                              |
+| ----------------------------------------------- | ------------------------------------ |
+| `[bump:major]` in the subject, `BREAKING CHANGE` | major: `1.4.2` -> `2.0.0`            |
+| `[bump:minor]` in the subject                   | minor: `1.4.2` -> `1.5.0`            |
+| none                                            | patch: `1.4.2` -> `1.4.3` (default)  |
+| `[skip release]` in the subject                 | no release                           |
+
+So put markers in the PR title. With GitHub's squash default, a PR with a single commit uses that
+commit's subject instead of the PR title, so put the marker in both.
 
 Use `[skip release]` for changes that don't affect the binary (docs, CI, tests, scripts), so they
-don't produce an identical release. Commits with `[skip release]` are also left out of release
-notes. Don't edit `version` in `Cargo.toml`: releases stamp it from the tag.
+don't produce an identical release. Commits with `[skip release]` in the subject are also left out
+of release notes. Don't edit `version` in `Cargo.toml`: releases stamp it from the tag.
