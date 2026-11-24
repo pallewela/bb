@@ -4,6 +4,7 @@
 [![CodeQL](https://github.com/pallewela/bb/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/pallewela/bb/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/pallewela/bb/branch/main/graph/badge.svg)](https://codecov.io/gh/pallewela/bb)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/pallewela/bb/badge)](https://scorecard.dev/viewer/?uri=github.com/pallewela/bb)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/17063/badge)](https://www.bestpractices.dev/projects/17063)
 [![Release](https://img.shields.io/github/v/release/pallewela/bb)](https://github.com/pallewela/bb/releases/latest)
 [![Last release](https://img.shields.io/github/release-date/pallewela/bb)](https://github.com/pallewela/bb/releases)
 [![License](https://img.shields.io/github/license/pallewela/bb)](LICENSE)
