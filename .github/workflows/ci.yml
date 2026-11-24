@@ -1,0 +1,60 @@
+name: CI
+
+# Every push to main and every pull request:
+#   test   build + cargo test on macOS, Linux and Windows
+#   build  pull requests only: every release target via build.yml, so a PR that would break
+#          a release fails before it is merged. Pushes to main skip it here: the release
+#          workflow builds them (with the real version) right after this run succeeds.
+# A successful run on main triggers release.yml (workflow_run), which decides whether to
+# publish. Nothing here publishes or has write access.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:   # on main this also triggers a release, like a push
+
+permissions: read-all
+
+concurrency:
+  # A new push to a PR cancels its previous run; every commit on main is tested
+  # (releases are queued separately in release.yml).
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # The macOS name is a required status check (ruleset "Protect main"); keep the names stable.
+  test:
+    name: Build & Test (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS arm64, os: macos-latest }
+          - { name: Linux x86_64, os: ubuntu-latest }
+          - { name: Windows x86_64, os: windows-latest }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31  # v2
+
+      - name: Build
+        run: cargo build --all-targets --locked
+
+      - name: Test
+        run: cargo test --locked
+
+  build:
+    name: Build
+    needs: test
+    if: github.event_name == 'pull_request'
+    uses: ./.github/workflows/build.yml   # version: Cargo.toml's
