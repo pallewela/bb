@@ -5,3 +5,14 @@ codecov:
     after_n_builds: 3
 comment:
   after_n_builds: 3
+coverage:
+  status:
+    # Whole-project coverage may not drop more than 1 point below the base branch.
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    # Lines a PR adds or changes must be at least 80% covered.
+    patch:
+      default:
+        target: 80%

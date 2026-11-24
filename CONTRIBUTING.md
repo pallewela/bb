@@ -31,6 +31,10 @@ routes it answers, runs a command, and checks the requests `bb` sent, its output
 code. They work because debug builds send API requests to `BB_TEST_API_URL` when it is set;
 release builds ignore it. When you add or change a command, add a CLI test for it.
 
+CI enforces coverage: each OS fails below 80% line coverage, and Codecov fails a PR whose added
+or changed lines are under 80% covered, or that drops overall coverage by more than a point. Run
+`cargo llvm-cov --open` to see which lines your change left untested.
+
 It also includes `tests/skill_recipes.rs`, which runs
 `tests/skill/run.sh` with `BB_REAL` set to the freshly built `bb`. That test needs `bash` and
 `jq`: it is skipped (with a message) when `jq` is missing, and ignored on Windows. One keychain
