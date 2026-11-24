@@ -7,14 +7,20 @@ name: Release
 #            version in Cargo.toml. "[skip release]" in the subject skips the release.
 #   build    one archive per target via build.yml (macOS arm64/x86_64, Linux arm64/x86_64
 #            static musl, Windows x86_64), each built and checked on a native runner (PRD §8)
-#   release  one GitHub release with every archive and its .sha256; then, if the repository
-#            variable CRATES_IO_PUBLISH is "true", `cargo publish` of bitbucket-bb-cli
-#            (trusted publishing); then the Homebrew tap (pallewela/homebrew-tap) is bumped
-#            via repository_dispatch when the TAP_REPO_TOKEN secret is set.
+#   release  one GitHub release with every archive and its .sha256; then it starts a publish
+#            run of this file (below)
 #   changelog  a PR that regenerates CHANGELOG.md up to the new tag (git-cliff), opened with
 #            the CHANGELOG_TOKEN secret; merging it does not release. Warns if the secret is unset.
 # A manual run (workflow_dispatch) on main releases main's HEAD if CI passed on it; running
 # CI manually on main does the same after testing it again.
+#
+# Publish run: workflow_dispatch with publish_tag=vX.Y.Z, on main, for an existing release.
+#   crates     if the repository variable CRATES_IO_PUBLISH is "true", `cargo publish` of
+#              bitbucket-bb-cli from the tag (trusted publishing)
+#   homebrew   bumps the tap (pallewela/homebrew-tap) via repository_dispatch when the
+#              TAP_REPO_TOKEN secret is set
+# This is a separate run because crates.io refuses trusted-publishing tokens for workflow_run
+# runs. To retry or catch up by hand: gh workflow run release.yml -f publish_tag=vX.Y.Z
 #
 # Keep this file named release.yml: crates.io trusted publishing is registered for this
 # workflow filename.
@@ -30,16 +36,26 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_tag:
+        description: >-
+          Only publish an existing release (vX.Y.Z) to crates.io and the Homebrew tap. Leave
+          empty to release main's HEAD.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
   # Queue releases so two never compute the same version. Runs that will do nothing (CI
-  # failed) get their own group, so they can't displace a queued release.
+  # failed) get their own group, so they can't displace a queued release; so do publish
+  # runs (a group holds only one pending run, and a newer one would cancel it).
   group: >-
-    ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
-    && 'release' || format('release-noop-{0}', github.run_id) }}
+    ${{ inputs.publish_tag && format('release-publish-{0}', inputs.publish_tag)
+    || ((github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    && 'release' || format('release-noop-{0}', github.run_id)) }}
   cancel-in-progress: false
 
 env:
@@ -55,7 +71,7 @@ jobs:
     # Only trusted triggers: a manual run, or CI that succeeded for a push or manual run on
     # main of this repository (a fork's PR from its own "main" branch must not match).
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && !inputs.publish_tag) ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main' &&
        github.event.workflow_run.head_repository.full_name == github.repository &&
@@ -157,7 +173,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-      id-token: write   # crates.io trusted publishing (OIDC), see "Publish to crates.io"
+      actions: write   # start the publish run (workflow_dispatch of this file)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -272,105 +288,18 @@ jobs:
           body_path: notes.md
           files: dist/*
 
-      # crates.io: on when the repository variable CRATES_IO_PUBLISH is "true". Trusted
-      # publishing (no stored token) needs the crate to exist and this repo + workflow to be
-      # registered under the crate's Settings → Trusted Publishing on crates.io.
-      - name: Check whether to publish to crates.io
-        id: crate
+      # crates.io refuses trusted-publishing tokens for workflow_run runs, so crates.io and
+      # the Homebrew tap are published by a separate manual (workflow_dispatch) run of this
+      # same file, which crates.io accepts and which keeps the registered filename. A
+      # workflow_dispatch started with GITHUB_TOKEN does create a run (unlike most events).
+      - name: Start crates.io and Homebrew publishing
         env:
-          ENABLED: ${{ vars.CRATES_IO_PUBLISH }}
-          VERSION: ${{ needs.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          if [ "${ENABLED:-}" != true ]; then
-            echo "CRATES_IO_PUBLISH is not \"true\"; not publishing to crates.io."
-            echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          NAME="$(sed -nE 's/^name = "(.*)"/\1/p' Cargo.toml | head -n1)"
-          code=$(curl -s -o /dev/null -w '%{http_code}' -A "github.com/${GITHUB_REPOSITORY} release" \
-            "https://crates.io/api/v1/crates/${NAME}/${VERSION}")
-          if [ "$code" = 200 ]; then
-            echo "${NAME} ${VERSION} is already on crates.io; nothing to publish."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "Publishing ${NAME} ${VERSION} to crates.io."
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install Rust toolchain
-        if: steps.crate.outputs.publish == 'true'
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
-
-      - name: Get a crates.io token (trusted publishing)
-        if: steps.crate.outputs.publish == 'true'
-        id: crates-auth
-        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9  # v1.0.6
-
-      - name: Publish to crates.io
-        if: steps.crate.outputs.publish == 'true'
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          # Same version stamp as the binaries. --allow-dirty: the stamp is an uncommitted edit.
-          sed -i -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
-          cargo publish --allow-dirty
-
-      - name: Check tap token presence
-        id: tap
-        env:
-          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
-        run: |
-          if [ -n "${TAP_REPO_TOKEN:-}" ]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::TAP_REPO_TOKEN secret is not set; skipping Homebrew tap bump."
-          fi
-
-      # `sha256` is the macOS arm64 archive's (what older versions of the tap workflow read);
-      # the per-target keys let it write a formula for macOS and Linux, arm64 and x86_64.
-      - name: Bump Homebrew tap formula
-        if: steps.tap.outputs.present == 'true'
-        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697  # v4
-        with:
-          token: ${{ secrets.TAP_REPO_TOKEN }}
-          repository: pallewela/homebrew-tap
-          event-type: bb-release
-          client-payload: |
-            {
-              "tag": "${{ needs.version.outputs.tag }}",
-              "sha256": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
-              "sha256_aarch64_apple_darwin": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
-              "sha256_x86_64_apple_darwin": "${{ steps.sums.outputs.x86_64_apple_darwin }}",
-              "sha256_x86_64_unknown_linux_musl": "${{ steps.sums.outputs.x86_64_unknown_linux_musl }}",
-              "sha256_aarch64_unknown_linux_musl": "${{ steps.sums.outputs.aarch64_unknown_linux_musl }}"
-            }
-
-      # repository_dispatch only confirms the event was accepted; poll the
-      # formula so a green release means brew actually has the new version.
-      - name: Verify Homebrew tap formula updated
-        if: steps.tap.outputs.present == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
-          EXPECTED_SHA256: ${{ steps.sums.outputs.aarch64_apple_darwin }}
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 18); do
-            content=$(gh api repos/pallewela/homebrew-tap/contents/Formula/bb.rb \
-              --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
-            if printf '%s\n' "$content" | grep -qE "^  version \"${VERSION}\"\$" \
-               && printf '%s\n' "$content" | grep -qiE "^ +sha256 \"${EXPECTED_SHA256}\"\$"; then
-              echo "Tap formula updated to ${VERSION}."
-              exit 0
-            fi
-            echo "Formula not yet at ${VERSION} (attempt ${attempt}/18); sleeping 10s..."
-            sleep 10
-          done
-          echo "::error::Tap formula did not update to ${VERSION} within 3 minutes."
-          exit 1
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main -f publish_tag="$TAG"
+          echo "Started the publish run for ${TAG}: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/workflows/release.yml"
 
   # After a release, open (or update) a PR that regenerates CHANGELOG.md up to the new tag.
   # main is protected, so this never pushes to main. It uses the CHANGELOG_TOKEN secret (a
@@ -466,3 +395,179 @@ jobs:
             while read -r old; do
               gh pr close "$old" --delete-branch --comment "Superseded by the CHANGELOG.md PR for ${TAG}." || true
             done
+
+  # ---- Publish run: `workflow_dispatch` with publish_tag set (started by the release job, or
+  # by hand to retry or catch up). crates.io and Homebrew are independent jobs, so one failing
+  # doesn't hold back the other. Both are idempotent: an existing crates.io version is
+  # skipped, and the tap bump just rewrites the formula.
+  publish-check:
+    name: Publish (check tag)
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      version: ${{ steps.t.outputs.version }}
+    steps:
+      - name: Check the tag and its release
+        id: t
+        env:
+          TAG: ${{ inputs.publish_tag }}
+          REF: ${{ github.ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::Publish runs must be started on main (this one is on ${REF})."; exit 1
+          fi
+          if ! printf '%s\n' "$TAG" | grep -qxE 'v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::publish_tag must look like vX.Y.Z (got \"${TAG}\")."; exit 1
+          fi
+          draft=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft) || {
+            echo "::error::No GitHub release ${TAG}; publish runs only publish existing releases."; exit 1; }
+          if [ "$draft" = true ]; then
+            echo "::error::Release ${TAG} is still a draft."; exit 1
+          fi
+          { echo "tag=$TAG"; echo "version=${TAG#v}"; } >> "$GITHUB_OUTPUT"
+
+  # crates.io: on when the repository variable CRATES_IO_PUBLISH is "true". Trusted
+  # publishing (no stored token) needs the crate to exist and this repo + this workflow file
+  # (release.yml) to be registered under the crate's Settings → Trusted Publishing on crates.io.
+  crates:
+    name: Publish to crates.io
+    needs: publish-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write   # crates.io trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: refs/tags/${{ needs.publish-check.outputs.tag }}
+
+      - name: Check whether to publish to crates.io
+        id: crate
+        env:
+          ENABLED: ${{ vars.CRATES_IO_PUBLISH }}
+          VERSION: ${{ needs.publish-check.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "${ENABLED:-}" != true ]; then
+            echo "CRATES_IO_PUBLISH is not \"true\"; not publishing to crates.io."
+            echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          NAME="$(sed -nE 's/^name = "(.*)"/\1/p' Cargo.toml | head -n1)"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -A "github.com/${GITHUB_REPOSITORY} release" \
+            "https://crates.io/api/v1/crates/${NAME}/${VERSION}")
+          if [ "$code" = 200 ]; then
+            echo "${NAME} ${VERSION} is already on crates.io; nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing ${NAME} ${VERSION} to crates.io."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain
+        if: steps.crate.outputs.publish == 'true'
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
+
+      - name: Get a crates.io token (trusted publishing)
+        if: steps.crate.outputs.publish == 'true'
+        id: crates-auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9  # v1.0.6
+
+      - name: Publish to crates.io
+        if: steps.crate.outputs.publish == 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-auth.outputs.token }}
+          VERSION: ${{ needs.publish-check.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Same version stamp as the binaries. --allow-dirty: the stamp is an uncommitted edit.
+          sed -i -E "1,/^version = /s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
+          cargo publish --allow-dirty
+
+  # Homebrew tap (pallewela/homebrew-tap), bumped via repository_dispatch when the
+  # TAP_REPO_TOKEN secret is set, with the checksums published on the GitHub release.
+  homebrew:
+    name: Bump Homebrew tap
+    needs: publish-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check tap token presence
+        id: tap
+        env:
+          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+        run: |
+          if [ -n "${TAP_REPO_TOKEN:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TAP_REPO_TOKEN secret is not set; skipping Homebrew tap bump."
+          fi
+
+      - name: Read checksums from the release
+        if: steps.tap.outputs.present == 'true'
+        id: sums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish-check.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.sha256' --dir sums
+          sum() { awk '{print $1}' "sums/bb-${TAG}-$1.$2.sha256"; }
+          {
+            echo "aarch64_apple_darwin=$(sum aarch64-apple-darwin tar.gz)"
+            echo "x86_64_apple_darwin=$(sum x86_64-apple-darwin tar.gz)"
+            echo "x86_64_unknown_linux_musl=$(sum x86_64-unknown-linux-musl tar.gz)"
+            echo "aarch64_unknown_linux_musl=$(sum aarch64-unknown-linux-musl tar.gz)"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      # `sha256` is the macOS arm64 archive's (what older versions of the tap workflow read);
+      # the per-target keys let it write a formula for macOS and Linux, arm64 and x86_64.
+      - name: Bump Homebrew tap formula
+        if: steps.tap.outputs.present == 'true'
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697  # v4
+        with:
+          token: ${{ secrets.TAP_REPO_TOKEN }}
+          repository: pallewela/homebrew-tap
+          event-type: bb-release
+          client-payload: |
+            {
+              "tag": "${{ needs.publish-check.outputs.tag }}",
+              "sha256": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
+              "sha256_aarch64_apple_darwin": "${{ steps.sums.outputs.aarch64_apple_darwin }}",
+              "sha256_x86_64_apple_darwin": "${{ steps.sums.outputs.x86_64_apple_darwin }}",
+              "sha256_x86_64_unknown_linux_musl": "${{ steps.sums.outputs.x86_64_unknown_linux_musl }}",
+              "sha256_aarch64_unknown_linux_musl": "${{ steps.sums.outputs.aarch64_unknown_linux_musl }}"
+            }
+
+      # repository_dispatch only confirms the event was accepted; poll the
+      # formula so a green run means brew actually has the new version.
+      - name: Verify Homebrew tap formula updated
+        if: steps.tap.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+          VERSION: ${{ needs.publish-check.outputs.version }}
+          EXPECTED_SHA256: ${{ steps.sums.outputs.aarch64_apple_darwin }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 18); do
+            content=$(gh api repos/pallewela/homebrew-tap/contents/Formula/bb.rb \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null || true)
+            if printf '%s\n' "$content" | grep -qE "^  version \"${VERSION}\"\$" \
+               && printf '%s\n' "$content" | grep -qiE "^ +sha256 \"${EXPECTED_SHA256}\"\$"; then
+              echo "Tap formula updated to ${VERSION}."
+              exit 0
+            fi
+            echo "Formula not yet at ${VERSION} (attempt ${attempt}/18); sleeping 10s..."
+            sleep 10
+          done
+          echo "::error::Tap formula did not update to ${VERSION} within 3 minutes."
+          exit 1

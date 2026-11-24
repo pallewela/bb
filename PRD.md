@@ -367,10 +367,13 @@ never partial.
   platform.
 - **crates.io:** the crate is `bitbucket-bb-cli` (`bb`, `bb-cli` and `bitbucket-cli` belong to
   other projects); `[[bin]] name = "bb"` keeps the command `bb`. It ships only `src/`,
-  `Cargo.toml`, `Cargo.lock`, `README.md` and `LICENSE`. The release job runs `cargo publish` with
-  the same version stamp as the binaries, using crates.io trusted publishing (GitHub OIDC, no
-  stored token), when the repository variable `CRATES_IO_PUBLISH` is `true`; a version that is
-  already on crates.io is skipped, so re-runs are safe. The first version is published by hand,
+  `Cargo.toml`, `Cargo.lock`, `README.md` and `LICENSE`. After the GitHub release, a separate
+  publish run of `release.yml` (`workflow_dispatch` with `publish_tag`) runs `cargo publish` from
+  the tag with the same version stamp as the binaries, using crates.io trusted publishing (GitHub
+  OIDC, no stored token), when the repository variable `CRATES_IO_PUBLISH` is `true`; a version
+  that is already on crates.io is skipped, so re-runs are safe. It is a separate run because
+  crates.io refuses trusted-publishing tokens for `workflow_run` runs, which is how releases start.
+  The same run bumps the Homebrew tap, in its own job. The first version is published by hand,
   since trusted publishing can only be set up for a crate that exists. Published versions can be
   yanked but never deleted.
 - **Windows** installs from the `.zip` by hand for now. *Gap:* no Scoop or winget package yet, and
