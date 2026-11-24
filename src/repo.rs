@@ -1,10 +1,10 @@
 //! `bb repo`: list, view, clone, create, delete.
-use crate::client::{enc, limit_arg, Client};
-use crate::context::{git_passthrough, Repo};
+use crate::client::{Client, enc, limit_arg};
+use crate::context::{Repo, git_passthrough};
 use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Subcommand;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Subcommand)]
 pub enum Cmd {

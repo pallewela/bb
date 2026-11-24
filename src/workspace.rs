@@ -1,5 +1,5 @@
 //! `bb workspace`: list the workspaces the caller can access.
-use crate::client::{limit_arg, Client};
+use crate::client::{Client, limit_arg};
 use crate::output::{json_mode, more_note, print_json, s, table};
 use anyhow::Result;
 use clap::Subcommand;

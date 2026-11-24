@@ -1,11 +1,11 @@
 //! `bb pr`: pull requests.
-use crate::client::{enc, limit_arg, Client};
+use crate::client::{Client, enc, limit_arg};
 use crate::context::{self, Repo};
 use crate::exit::{self, Exit};
 use crate::output::{self, s};
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{ArgGroup, Args, Subcommand};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{IsTerminal, Read};
 use std::time::Duration;
 
@@ -274,7 +274,8 @@ pub enum Cmd {
 
 /// The Bitbucket `merge_strategy` for the strategy flags, in `Cmd::Merge` order (clap allows at most one).
 fn merge_strategy(on: [bool; 6]) -> Option<&'static str> {
-    let names = ["merge_commit", "squash", "rebase_fast_forward", "fast_forward", "rebase_merge", "squash_fast_forward"];
+    let names =
+        ["merge_commit", "squash", "rebase_fast_forward", "fast_forward", "rebase_merge", "squash_fast_forward"];
     on.into_iter().zip(names).find_map(|(on, name)| on.then_some(name))
 }
 
@@ -517,7 +518,10 @@ pub fn run(cmd: Cmd) -> Result<()> {
             if approve {
                 done(&c.post(&format!("{path}/approve"), None)?, format!("Approved pull request #{id}"));
             } else if request_changes {
-                done(&c.post(&format!("{path}/request-changes"), None)?, format!("Requested changes on pull request #{id}"));
+                done(
+                    &c.post(&format!("{path}/request-changes"), None)?,
+                    format!("Requested changes on pull request #{id}"),
+                );
             } else {
                 done(&Value::Null, format!("Reviewed pull request #{id}"));
             }
@@ -557,11 +561,14 @@ pub fn run(cmd: Cmd) -> Result<()> {
             if edit_last {
                 match last_own_comment(&c, &path)? {
                     Some(last) => {
-                        let v = c.put(&format!("{path}/comments/{}", s(&last, "id")), &json!({"content": {"raw": body}}))?;
+                        let v =
+                            c.put(&format!("{path}/comments/{}", s(&last, "id")), &json!({"content": {"raw": body}}))?;
                         done(&v, format!("Edited your last comment on pull request #{id}"));
                         return Ok(());
                     }
-                    None if !create_if_none => bail!("you have no comments on this pull request (use --create-if-none)"),
+                    None if !create_if_none => {
+                        bail!("you have no comments on this pull request (use --create-if-none)")
+                    }
                     None => {}
                 }
             }
@@ -744,10 +751,11 @@ struct Filter<'a> {
 
 fn list_query(f: &Filter, limit: usize) -> String {
     let mut params: Vec<String> = states(f.state).iter().map(|st| format!("state={st}")).collect();
-    let mut q: Vec<String> = [("author.username", &f.author), ("destination.branch.name", &f.base), ("source.branch.name", &f.head)]
-        .into_iter()
-        .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}=\"{v}\"")))
-        .collect();
+    let mut q: Vec<String> =
+        [("author.username", &f.author), ("destination.branch.name", &f.base), ("source.branch.name", &f.head)]
+            .into_iter()
+            .filter_map(|(k, v)| v.as_ref().map(|v| format!("{k}=\"{v}\"")))
+            .collect();
     if let Some(text) = &f.search {
         let text = text.replace('"', "\\\"");
         q.push(format!("(title ~ \"{text}\" OR description ~ \"{text}\")"));
@@ -908,7 +916,10 @@ fn last_own_comment(c: &Client, path: &str) -> Result<Option<Value>> {
     let me = c.get("/user").context("finding your account (the token needs the read:user scope)")?;
     let me = s(&me, "account_id");
     let list = c.paginate(&format!("{path}/comments?pagelen=100"), usize::MAX)?;
-    Ok(list.into_iter().filter(|x| x["deleted"] != true && s(x, "user.account_id") == me).max_by_key(|x| x["id"].as_u64()))
+    Ok(list
+        .into_iter()
+        .filter(|x| x["deleted"] != true && s(x, "user.account_id") == me)
+        .max_by_key(|x| x["id"].as_u64()))
 }
 
 /// (failed, pending) counts. Bitbucket states: SUCCESSFUL, FAILED, INPROGRESS, STOPPED.
@@ -969,7 +980,11 @@ fn exclude_files(diff: &str, patterns: &[String]) -> String {
 fn colorize(diff: &str) -> String {
     diff.split_inclusive('\n')
         .map(|line| {
-            let code = if line.starts_with("diff --git") || line.starts_with("+++") || line.starts_with("---") || line.starts_with("index ") {
+            let code = if line.starts_with("diff --git")
+                || line.starts_with("+++")
+                || line.starts_with("---")
+                || line.starts_with("index ")
+            {
                 "1"
             } else if line.starts_with("@@") {
                 "36"
@@ -996,7 +1011,10 @@ mod tests {
         assert_eq!(parse_pr("#7").unwrap(), PrRef::Id(None, 7));
         let repo = Repo { workspace: "ws".into(), slug: "r".into() };
         assert_eq!(parse_pr("https://bitbucket.org/ws/r/pull-requests/34").unwrap(), PrRef::Id(Some(repo.clone()), 34));
-        assert_eq!(parse_pr("https://bitbucket.org/ws/r/pull-requests/34/diff?x=1").unwrap(), PrRef::Id(Some(repo), 34));
+        assert_eq!(
+            parse_pr("https://bitbucket.org/ws/r/pull-requests/34/diff?x=1").unwrap(),
+            PrRef::Id(Some(repo), 34)
+        );
         assert_eq!(parse_pr("feature/abc").unwrap(), PrRef::Branch("feature/abc".into()));
         assert!(parse_pr("https://bitbucket.org/ws/r/pull-requests/x").is_err());
         assert!(parse_pr("https://bitbucket.org/ws/r").is_err());
@@ -1039,7 +1057,10 @@ mod tests {
         let f = Filter { search: Some("fix \"x\"".into()), draft: true, ..filter("open") };
         assert_eq!(
             list_query(&f, 10),
-            format!("state=OPEN&q={}&pagelen=10", enc("(title ~ \"fix \\\"x\\\"\" OR description ~ \"fix \\\"x\\\"\") AND draft=true"))
+            format!(
+                "state=OPEN&q={}&pagelen=10",
+                enc("(title ~ \"fix \\\"x\\\"\" OR description ~ \"fix \\\"x\\\"\") AND draft=true")
+            )
         );
     }
 
@@ -1051,7 +1072,10 @@ mod tests {
         assert_eq!(fill_text(Fill::Default, &two, "feat/add-x"), ("Add x".into(), "- Add x\n- Fix z".into()));
         assert_eq!(fill_text(Fill::Default, &two, "feat/new_thing"), ("New thing".into(), "- Add x\n- Fix z".into()));
         assert_eq!(fill_text(Fill::First, &two, "b"), ("Add x".into(), "Because y".into()));
-        assert_eq!(fill_text(Fill::Verbose, &two, "my-branch"), ("My branch".into(), "Add x\n\nBecause y\n\nFix z".into()));
+        assert_eq!(
+            fill_text(Fill::Verbose, &two, "my-branch"),
+            ("My branch".into(), "Add x\n\nBecause y\n\nFix z".into())
+        );
         assert_eq!(fill_text(Fill::Default, &[], "b"), ("B".into(), String::new()));
     }
 
@@ -1087,7 +1111,12 @@ mod tests {
 
     #[test]
     fn checks() {
-        let list = [json!({"state": "SUCCESSFUL"}), json!({"state": "FAILED"}), json!({"state": "STOPPED"}), json!({"state": "INPROGRESS"})];
+        let list = [
+            json!({"state": "SUCCESSFUL"}),
+            json!({"state": "FAILED"}),
+            json!({"state": "STOPPED"}),
+            json!({"state": "INPROGRESS"}),
+        ];
         assert_eq!(tally(&list), (2, 1));
         assert_eq!(summary(4, 2, 1), "2 failed, 1 passed, 1 pending");
     }
