@@ -1,8 +1,8 @@
 //! `bb pipeline` and `bb workflow` end to end against a mock Bitbucket API.
 mod common;
 
-use common::{json, route, text, Mock};
-use serde_json::{json, Value};
+use common::{Mock, json, route, text};
+use serde_json::{Value, json};
 
 const BASE: &str = "/repositories/ws/r/pipelines";
 
@@ -31,10 +31,19 @@ const STEPS: &str = "/repositories/ws/r/pipelines/%7Bp-42%7D/steps/";
 #[test]
 fn list_prints_a_table_with_filters() {
     let m = Mock::start(vec![json("GET", &format!("{BASE}/"), json!({"values": [pipeline("SUCCESSFUL")]}))]);
-    let stdout = m.bb(&["pipeline", "list", "-R", "ws/r", "-b", "main", "-s", "completed", "-e", "manual", "-w", "deploy"]).ok().to_string();
+    let stdout = m
+        .bb(&["pipeline", "list", "-R", "ws/r", "-b", "main", "-s", "completed", "-e", "manual", "-w", "deploy"])
+        .ok()
+        .to_string();
     let lines: Vec<&str> = stdout.lines().collect();
     assert!(lines[0].starts_with('#') && lines[0].contains("STATUS") && lines[0].contains("CREATOR"), "{stdout}");
-    assert!(lines[1].contains("#42") && lines[1].contains("SUCCESSFUL") && lines[1].contains("main") && lines[1].contains("Ada"), "{stdout}");
+    assert!(
+        lines[1].contains("#42")
+            && lines[1].contains("SUCCESSFUL")
+            && lines[1].contains("main")
+            && lines[1].contains("Ada"),
+        "{stdout}"
+    );
     assert_eq!(
         m.lines(),
         [format!(
@@ -91,7 +100,10 @@ fn view_exit_status_fails_for_a_failed_pipeline() {
 
 #[test]
 fn view_by_uuid_and_unknown_job() {
-    let m = Mock::start(vec![json("GET", &format!("{BASE}/%7Bp-42%7D"), pipeline("SUCCESSFUL")), json("GET", STEPS, steps())]);
+    let m = Mock::start(vec![
+        json("GET", &format!("{BASE}/%7Bp-42%7D"), pipeline("SUCCESSFUL")),
+        json("GET", STEPS, steps()),
+    ]);
     let err = m.bb(&["pipeline", "view", "p-42", "-R", "ws/r", "-j", "deploy"]).fails(1).to_string();
     assert!(err.contains("no step `deploy` in pipeline #42"), "{err}");
 }
@@ -131,7 +143,20 @@ fn watch_returns_once_finished() {
 #[test]
 fn run_posts_variables() {
     let m = Mock::start(vec![json("POST", &format!("{BASE}/"), json!({"build_number": 43}))]);
-    let out = m.bb(&["pipeline", "run", "-R", "ws/r", "--ref", "release", "--pipeline", "deploy", "-f", "ENV=prod", "-F", "N=1"]);
+    let out = m.bb(&[
+        "pipeline",
+        "run",
+        "-R",
+        "ws/r",
+        "--ref",
+        "release",
+        "--pipeline",
+        "deploy",
+        "-f",
+        "ENV=prod",
+        "-F",
+        "N=1",
+    ]);
     assert_eq!(out.ok(), "Started pipeline #43\nhttps://bitbucket.org/ws/r/pipelines/results/43\n");
     assert_eq!(
         m.one("POST", &format!("{BASE}/")).json(),

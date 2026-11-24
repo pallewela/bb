@@ -1,8 +1,8 @@
 //! `bb pr ...` end to end against a mock Bitbucket API.
 mod common;
 
-use common::{json, route, text, Mock};
-use serde_json::{json, Value};
+use common::{Mock, json, route, text};
+use serde_json::{Value, json};
 
 const PR: &str = "/repositories/ws/r/pullrequests/7";
 
@@ -53,7 +53,12 @@ fn list_prints_a_table() {
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines.len(), 3, "{stdout}");
     assert!(lines[0].starts_with("ID") && lines[0].contains("TITLE") && lines[0].contains("STATE"));
-    assert!(lines[1].contains("#7") && lines[1].contains("Add widgets") && lines[1].contains("feature/widgets") && lines[1].contains("Ada"));
+    assert!(
+        lines[1].contains("#7")
+            && lines[1].contains("Add widgets")
+            && lines[1].contains("feature/widgets")
+            && lines[1].contains("Ada")
+    );
     assert!(lines[2].contains("#8") && lines[2].contains("OPEN (draft)"));
     assert!(out.stderr.is_empty(), "no `more` note when everything fit: {}", out.stderr);
 }
@@ -81,7 +86,23 @@ fn list_follows_pages_and_notes_truncation() {
 fn list_sends_filters_and_prints_json() {
     let m = Mock::start(vec![json("GET", "/repositories/ws/r/pullrequests", json!({"values": [pr7()]}))]);
     let v = m
-        .bb(&["pr", "list", "-R", "ws/r", "--json", "-s", "merged", "-A", "ada", "-B", "main", "-S", "fix \"x\"", "-L", "5"])
+        .bb(&[
+            "pr",
+            "list",
+            "-R",
+            "ws/r",
+            "--json",
+            "-s",
+            "merged",
+            "-A",
+            "ada",
+            "-B",
+            "main",
+            "-S",
+            "fix \"x\"",
+            "-L",
+            "5",
+        ])
         .json();
     assert_eq!(v[0]["id"], 7);
     let q = r#"author.username="ada" AND destination.branch.name="main" AND (title ~ "fix \"x\"" OR description ~ "fix \"x\"")"#;
@@ -153,7 +174,8 @@ fn view_by_branch_without_pull_requests_fails() {
 
 #[test]
 fn api_errors_exit_1_with_the_api_message() {
-    let m = Mock::start(vec![route("GET", PR, 404, r#"{"type":"error","error":{"message":"Pull request not found"}}"#)]);
+    let m =
+        Mock::start(vec![route("GET", PR, 404, r#"{"type":"error","error":{"message":"Pull request not found"}}"#)]);
     let err = m.bb(&["pr", "view", "7", "-R", "ws/r"]).fails(1).to_string();
     assert_eq!(err.trim(), "bb: HTTP 404: Pull request not found");
 }
@@ -169,8 +191,23 @@ fn missing_credentials_exit_4() {
 fn create_posts_the_pull_request() {
     let m = Mock::start(vec![json("POST", "/repositories/ws/r/pullrequests", pr7())]);
     let out = m.bb(&[
-        "pr", "create", "-R", "ws/r", "-t", "Add widgets", "-b", "Body", "-B", "main", "-H", "feature/widgets", "-r", "{u-1}", "-r",
-        "acct-2", "-d",
+        "pr",
+        "create",
+        "-R",
+        "ws/r",
+        "-t",
+        "Add widgets",
+        "-b",
+        "Body",
+        "-B",
+        "main",
+        "-H",
+        "feature/widgets",
+        "-r",
+        "{u-1}",
+        "-r",
+        "acct-2",
+        "-d",
     ]);
     assert_eq!(out.ok().trim(), "https://bitbucket.org/ws/r/pull-requests/7");
     let body = m.one("POST", "/repositories/ws/r/pullrequests").json();
@@ -191,10 +228,14 @@ fn create_posts_the_pull_request() {
 #[test]
 fn create_dry_run_sends_nothing() {
     let m = Mock::start(vec![]);
-    let out = m.bb(&["pr", "create", "-R", "ws/r", "-t", "T", "-b", "Hello", "-H", "feat", "-r", "acct-2", "--dry-run"]);
+    let out =
+        m.bb(&["pr", "create", "-R", "ws/r", "-t", "T", "-b", "Hello", "-H", "feat", "-r", "acct-2", "--dry-run"]);
     let stdout = out.ok();
     assert!(stdout.contains("Would create pull request in ws/r: feat → (main branch)"), "{stdout}");
-    assert!(stdout.contains("title: T") && stdout.contains("reviewers: acct-2") && stdout.contains("Hello"), "{stdout}");
+    assert!(
+        stdout.contains("title: T") && stdout.contains("reviewers: acct-2") && stdout.contains("Hello"),
+        "{stdout}"
+    );
     assert!(m.requests().is_empty());
 }
 
@@ -208,7 +249,19 @@ fn create_requires_a_title() {
 #[test]
 fn merge_sends_strategy_message_and_close_flag() {
     let m = Mock::start(vec![json("POST", &format!("{PR}/merge"), pr7())]);
-    let out = m.bb(&["pr", "merge", "7", "-R", "ws/r", "--squash", "--subject", "Subj", "--body", "Text", "--close-source-branch"]);
+    let out = m.bb(&[
+        "pr",
+        "merge",
+        "7",
+        "-R",
+        "ws/r",
+        "--squash",
+        "--subject",
+        "Subj",
+        "--body",
+        "Text",
+        "--close-source-branch",
+    ]);
     assert_eq!(out.ok().trim(), "Merged pull request #7");
     let body = m.one("POST", &format!("{PR}/merge")).json();
     assert_eq!(body, json!({"merge_strategy": "squash", "message": "Subj\n\nText", "close_source_branch": true}));
@@ -216,7 +269,10 @@ fn merge_sends_strategy_message_and_close_flag() {
 
 #[test]
 fn close_comments_then_declines() {
-    let m = Mock::start(vec![json("POST", &format!("{PR}/comments"), json!({"id": 9})), json("POST", &format!("{PR}/decline"), pr7())]);
+    let m = Mock::start(vec![
+        json("POST", &format!("{PR}/comments"), json!({"id": 9})),
+        json("POST", &format!("{PR}/decline"), pr7()),
+    ]);
     assert_eq!(m.bb(&["pr", "close", "7", "-R", "ws/r", "-c", "Superseded"]).ok().trim(), "Declined pull request #7");
     assert_eq!(m.lines(), [format!("POST {PR}/comments"), format!("POST {PR}/decline")]);
     assert_eq!(m.requests()[0].json(), json!({"content": {"raw": "Superseded"}}));
@@ -235,10 +291,18 @@ fn approve_unapprove_and_request_changes() {
     assert_eq!(m.bb(&["pr", "approve", "7", "-R", "ws/r"]).ok().trim(), "Approved pull request #7");
     assert_eq!(m.bb(&["pr", "unapprove", "7", "-R", "ws/r"]).ok().trim(), "Removed approval from pull request #7");
     assert_eq!(m.bb(&["pr", "request-changes", "7", "-R", "ws/r"]).ok().trim(), "Requested changes on pull request #7");
-    assert_eq!(m.bb(&["pr", "request-changes", "7", "-R", "ws/r", "--undo"]).ok().trim(), "Withdrew change request on pull request #7");
+    assert_eq!(
+        m.bb(&["pr", "request-changes", "7", "-R", "ws/r", "--undo"]).ok().trim(),
+        "Withdrew change request on pull request #7"
+    );
     assert_eq!(
         m.lines(),
-        [format!("POST {PR}/approve"), format!("DELETE {PR}/approve"), format!("POST {PR}/request-changes"), format!("DELETE {PR}/request-changes")]
+        [
+            format!("POST {PR}/approve"),
+            format!("DELETE {PR}/approve"),
+            format!("POST {PR}/request-changes"),
+            format!("DELETE {PR}/request-changes")
+        ]
     );
     // --json prints the raw response instead of the message.
     assert_eq!(m.bb(&["pr", "approve", "7", "-R", "ws/r", "--json"]).json(), json!({"approved": true}));
@@ -246,7 +310,10 @@ fn approve_unapprove_and_request_changes() {
 
 #[test]
 fn review_request_changes_comments_first() {
-    let m = Mock::start(vec![json("POST", &format!("{PR}/comments"), json!({})), json("POST", &format!("{PR}/request-changes"), json!({}))]);
+    let m = Mock::start(vec![
+        json("POST", &format!("{PR}/comments"), json!({})),
+        json("POST", &format!("{PR}/request-changes"), json!({})),
+    ]);
     let out = m.bb(&["pr", "review", "7", "-R", "ws/r", "--request-changes", "-b", "Please add tests"]);
     assert_eq!(out.ok().trim(), "Requested changes on pull request #7");
     assert_eq!(m.lines(), [format!("POST {PR}/comments"), format!("POST {PR}/request-changes")]);
@@ -265,7 +332,10 @@ fn comment_inline() {
     let m = Mock::start(vec![json("POST", &format!("{PR}/comments"), json!({"id": 10}))]);
     let out = m.bb(&["pr", "comment", "7", "-R", "ws/r", "-b", "Why?", "--file", "src/lib.rs", "--line", "3"]);
     assert_eq!(out.ok().trim(), "Commented on pull request #7");
-    assert_eq!(m.one("POST", &format!("{PR}/comments")).json(), json!({"content": {"raw": "Why?"}, "inline": {"path": "src/lib.rs", "to": 3}}));
+    assert_eq!(
+        m.one("POST", &format!("{PR}/comments")).json(),
+        json!({"content": {"raw": "Why?"}, "inline": {"path": "src/lib.rs", "to": 3}})
+    );
 }
 
 #[test]

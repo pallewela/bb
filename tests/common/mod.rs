@@ -25,7 +25,8 @@ pub struct Request {
 
 impl Request {
     pub fn json(&self) -> Value {
-        serde_json::from_str(&self.body).unwrap_or_else(|e| panic!("{} {} body is not JSON ({e}): {}", self.method, self.target, self.body))
+        serde_json::from_str(&self.body)
+            .unwrap_or_else(|e| panic!("{} {} body is not JSON ({e}): {}", self.method, self.target, self.body))
     }
 
     pub fn header(&self, name: &str) -> Option<&str> {
@@ -114,7 +115,8 @@ impl Mock {
     /// The only request with this method and path (query ignored); panics if there are 0 or 2+.
     pub fn one(&self, method: &str, path: &str) -> Request {
         let all = self.requests();
-        let hits: Vec<_> = all.iter().filter(|r| r.method == method && r.target.split('?').next() == Some(path)).collect();
+        let hits: Vec<_> =
+            all.iter().filter(|r| r.method == method && r.target.split('?').next() == Some(path)).collect();
         assert_eq!(hits.len(), 1, "expected one {method} {path}, saw: {:#?}", self.lines());
         hits[0].clone()
     }
@@ -156,8 +158,11 @@ pub fn bb_command(args: &[&str]) -> Command {
 fn scratch_dir() -> PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static N: AtomicUsize = AtomicUsize::new(0);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-        .join(format!("cli-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "cli-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

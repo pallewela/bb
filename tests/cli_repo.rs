@@ -1,7 +1,7 @@
 //! `bb repo`, `bb workspace` and `bb api` end to end against a mock Bitbucket API.
 mod common;
 
-use common::{json, route, text, Mock};
+use common::{Mock, json, route, text};
 use serde_json::json;
 
 fn repo() -> serde_json::Value {
@@ -36,12 +36,33 @@ fn repo_list_prints_a_table() {
 
 #[test]
 fn repo_list_defaults_to_the_current_repos_workspace_and_filters() {
-    let m = Mock::start(vec![json("GET", "/repositories/ws", json!({"values": [repo()], "next": "{base}/repositories/ws?page=2"}))]);
-    let v = m.bb(&["repo", "list", "-R", "ws/other", "--json", "-L", "1", "--visibility", "private", "-l", "Rust", "--source"]).json();
+    let m = Mock::start(vec![json(
+        "GET",
+        "/repositories/ws",
+        json!({"values": [repo()], "next": "{base}/repositories/ws?page=2"}),
+    )]);
+    let v = m
+        .bb(&[
+            "repo",
+            "list",
+            "-R",
+            "ws/other",
+            "--json",
+            "-L",
+            "1",
+            "--visibility",
+            "private",
+            "-l",
+            "Rust",
+            "--source",
+        ])
+        .json();
     assert_eq!(v.as_array().unwrap().len(), 1);
     assert_eq!(
         m.lines(),
-        ["GET /repositories/ws?sort=-updated_on&pagelen=1&q=is_private%20%3D%20true%20AND%20language%20%3D%20%22rust%22%20AND%20parent%20%3D%20null"],
+        [
+            "GET /repositories/ws?sort=-updated_on&pagelen=1&q=is_private%20%3D%20true%20AND%20language%20%3D%20%22rust%22%20AND%20parent%20%3D%20null"
+        ],
         "stops at -L without fetching the next page"
     );
 }
@@ -90,7 +111,11 @@ fn repo_view_json() {
 
 #[test]
 fn repo_create() {
-    let m = Mock::start(vec![json("POST", "/repositories/ws/new", json!({"links": {"html": {"href": "https://bitbucket.org/ws/new"}}}))]);
+    let m = Mock::start(vec![json(
+        "POST",
+        "/repositories/ws/new",
+        json!({"links": {"html": {"href": "https://bitbucket.org/ws/new"}}}),
+    )]);
     let out = m.bb(&["repo", "create", "ws/new", "--public", "-d", "Fresh", "-p", "PROJ"]);
     assert_eq!(out.ok().trim(), "https://bitbucket.org/ws/new");
     assert_eq!(
