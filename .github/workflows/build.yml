@@ -20,9 +20,10 @@ on:
         type: string
         default: ''
 
-# Read only. A called workflow can't ask for more than its caller grants: both callers'
-# build jobs inherit their workflow's top-level read-all, so this fits.
-permissions: read-all
+# Read only. A called workflow can't ask for more than its caller grants, and CI's release
+# job grants only what the release needs, so ask for just what checkout needs.
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always

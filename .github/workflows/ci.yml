@@ -10,8 +10,9 @@ name: CI
 #   build  pull requests only: every release target via build.yml, so a PR that would break
 #          a release fails before it is merged. Pushes to main skip it here: the release
 #          workflow builds them (with the real version) right after this run succeeds.
-# A successful run on main triggers release.yml (workflow_run), which decides whether to
-# publish. Nothing here publishes or has write access.
+#   release  pushes and manual runs on main only, after test, clippy, fmt and deny pass:
+#          calls release.yml on the commit this run tested, which decides whether to publish.
+#          It is the only job with write access; pull requests never run it.
 
 on:
   push:
@@ -128,3 +129,24 @@ jobs:
     needs: test
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/build.yml   # version: Cargo.toml's
+
+  # Releases run here, in the same run, instead of from a workflow_run trigger in release.yml:
+  # then no workflow runs with write access because another workflow's run finished.
+  release:
+    name: Release
+    needs: [test, clippy, fmt, deny]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Queue releases so two never compute the same version (manual runs of release.yml use
+    # the same group).
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    permissions:
+      contents: write       # create the tag and release
+      actions: write        # start the publish run (workflow_dispatch of release.yml)
+      id-token: write       # sign the provenance attestation (Sigstore, keyless)
+      attestations: write   # store it with GitHub, for `gh attestation verify`
+    uses: ./.github/workflows/release.yml
+    with:
+      tested: true
+    secrets: inherit        # CHANGELOG_TOKEN for the changelog PR

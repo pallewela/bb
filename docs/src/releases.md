@@ -2,8 +2,10 @@
 
 ## How releases happen
 
-Every push to `main` that passes CI is released automatically by
-[`.github/workflows/release.yml`](https://github.com/pallewela/bb/blob/main/.github/workflows/release.yml).
+Every push to `main` that passes CI is released automatically: CI's last job calls
+[`.github/workflows/release.yml`](https://github.com/pallewela/bb/blob/main/.github/workflows/release.yml)
+on the commit it just tested. To retry a release that failed, re-run the failed jobs of that CI
+run.
 The patch version is bumped by default. Put one of these in the head commit's subject to change that
 (the same text in the body is ignored; only `BREAKING CHANGE` counts anywhere in the message):
 
