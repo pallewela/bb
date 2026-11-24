@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Rust dependencies (Cargo.toml / Cargo.lock). Minor and patch bumps arrive as one grouped
+  # PR a week; major bumps get their own PR each.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  # GitHub Actions used in .github/workflows (SHA pins are updated, tag comments too).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
