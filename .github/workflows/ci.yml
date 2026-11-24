@@ -4,6 +4,7 @@ name: CI
 #   test   build + cargo test on macOS, Linux and Windows, run under cargo-llvm-cov; each OS
 #          uploads its lcov.info to Codecov (CODECOV_TOKEN secret, one flag per OS), and Codecov
 #          merges the three so platform-specific code is measured on its own platform
+#          (each OS fails below 80% line coverage; codecov.yml sets the PR status targets)
 #   clippy cargo clippy --all-targets, warnings are errors
 #   fmt    cargo fmt --check, per rustfmt.toml
 #   deny   cargo deny --locked check (advisories, licenses, bans, sources; see deny.toml)
@@ -62,8 +63,10 @@ jobs:
       - name: Build
         run: cargo build --all-targets --locked
 
+      # Fails if line coverage drops below the floor (about 84% today). Raise it as coverage
+      # grows; never lower it to get a PR through, add tests instead.
       - name: Test with coverage
-        run: cargo llvm-cov --locked --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info --fail-under-lines 80
 
       # Without CODECOV_TOKEN (e.g. fork pull requests) the upload may fail; that never fails CI.
       - name: Upload coverage to Codecov
