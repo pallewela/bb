@@ -1,9 +1,10 @@
 name: Release
 
 # Runs after every successful CI run (ci.yml) for a push to main, on the commit CI tested:
-#   version  next version = latest vX.Y.Z tag bumped by the head commit's marker
-#            ([bump:major] / BREAKING CHANGE, [bump:minor], otherwise patch); the first
-#            release uses the version in Cargo.toml. "[skip release]" skips the release.
+#   version  next version = latest vX.Y.Z tag bumped by the marker in the head commit's
+#            subject ([bump:major], [bump:minor], otherwise patch; "BREAKING CHANGE"
+#            anywhere in the message also means major); the first release uses the
+#            version in Cargo.toml. "[skip release]" in the subject skips the release.
 #   build    one archive per target via build.yml (macOS arm64/x86_64, Linux arm64/x86_64
 #            static musl, Windows x86_64), each built and checked on a native runner (PRD §8)
 #   release  one GitHub release with every archive and its .sha256; then, if the repository
@@ -100,8 +101,11 @@ jobs:
               exit 1
             fi
           fi
+          # Markers count only in the subject (the PR title of a squash merge): a squash body
+          # lists the PR's commits and may mention a marker without meaning it.
+          HEAD_SUBJECT=$(git log -1 --format=%s)
           HEAD_MSG=$(git log -1 --format=%B)
-          if echo "$HEAD_MSG" | grep -qiE '\[skip release\]'; then
+          if echo "$HEAD_SUBJECT" | grep -qiE '\[skip release\]'; then
             no_publish "Head commit requests [skip release]; not releasing."
           fi
           if [ -n "$(git tag --points-at HEAD --list 'v[0-9]*')" ]; then
@@ -113,9 +117,9 @@ jobs:
             NEW="v$CARGO_VERSION"
           else
             LEVEL="patch"
-            if echo "$HEAD_MSG" | grep -qE '\[bump:major\]|BREAKING CHANGE'; then
+            if echo "$HEAD_SUBJECT" | grep -qE '\[bump:major\]' || echo "$HEAD_MSG" | grep -qE 'BREAKING CHANGE'; then
               LEVEL="major"
-            elif echo "$HEAD_MSG" | grep -qE '\[bump:minor\]'; then
+            elif echo "$HEAD_SUBJECT" | grep -qE '\[bump:minor\]'; then
               LEVEL="minor"
             fi
             V="${PREV#v}"; MAJ="${V%%.*}"; REST="${V#*.}"; MIN="${REST%%.*}"; PAT="${REST#*.}"
