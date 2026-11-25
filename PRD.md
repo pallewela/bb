@@ -353,8 +353,10 @@ Each release publishes one archive per target, built and checked on a native Git
 | `x86_64-pc-windows-msvc` | Windows x86_64 | `windows-latest` | `.zip` (`bb.exe`) | runs `bb --version` |
 
 Archives are named `bb-vX.Y.Z-TARGET.{tar.gz,zip}`, contain the binary, `LICENSE` and `README.md`,
-and come with a `.sha256` file. The release also carries a signed SLSA build provenance
-attestation for all archives (`bb-vX.Y.Z.intoto.jsonl`, made with `actions/attest-build-provenance`
+and come with a `.sha256` file. Each Linux target also yields a `.deb` and an `.rpm`
+(`bitbucket-bb-cli_X.Y.Z-1_{amd64,arm64}.deb`, `bitbucket-bb-cli-X.Y.Z-1.{x86_64,aarch64}.rpm`,
+each with a `.sha256`). The release also carries a signed SLSA build provenance
+attestation for all archives and packages (`bb-vX.Y.Z.intoto.jsonl`, made with `actions/attest-build-provenance`
 and also stored by GitHub, so `gh attestation verify` works). All of them are published in one
 release call, so a release is never partial.
 
@@ -369,6 +371,19 @@ release call, so a release is never partial.
 - **Homebrew** (`pallewela/tap/bb`) covers macOS and Linux, arm64 and x86_64: the release sends
   each archive's SHA256 to the tap, whose workflow rewrites `Formula/bb.rb` with one URL per
   platform.
+- **Linux packages.** `packaging/nfpm.yaml` turns the checked musl binary into a `.deb` and an
+  `.rpm` with nfpm (built from source at a pinned version with `go install`), on the same runner.
+  Before upload, the `.deb` is installed, run and removed on that Ubuntu runner, and the `.rpm`
+  likewise in a `fedora:latest` container. The package is `bitbucket-bb-cli` (Debian already has
+  an unrelated `bb`); it installs `/usr/bin/bb`, the README and the license, and suggests
+  `xdg-utils` for `--web`. No dependencies: the binary is static. *Gap:* no apt/dnf repository
+  (users install the file and upgrade by hand), and the `.rpm` isn't GPG-signed; the provenance
+  attestation and `.sha256` cover them instead.
+- **AUR** (`bitbucket-bb-cli-bin`): `packaging/aur/render.sh` fills `PKGBUILD.in` with the
+  version and the musl archives' SHA256s and writes `.SRCINFO` (no Arch needed). The publish run's
+  `aur` job pushes both to `ssh://aur@aur.archlinux.org/bitbucket-bb-cli-bin.git` when the
+  `AUR_SSH_PRIVATE_KEY` secret is set (the AUR host key is pinned); an unchanged package isn't
+  pushed, so re-runs are safe.
 - **crates.io:** the crate is `bitbucket-bb-cli` (`bb`, `bb-cli` and `bitbucket-cli` belong to
   other projects); `[[bin]] name = "bb"` keeps the command `bb`. It ships only `src/`,
   `Cargo.toml`, `Cargo.lock`, `README.md` and `LICENSE`. After the GitHub release, a separate
@@ -378,7 +393,7 @@ release call, so a release is never partial.
   that is already on crates.io is skipped, so re-runs are safe. It is a separate run so that
   `release.yml`, the workflow registered for trusted publishing, is the top-level workflow (the
   release itself runs inside CI's run).
-  The same run bumps the Homebrew tap, in its own job. The first version is published by hand,
+  The same run bumps the Homebrew tap and the AUR package, each in its own job. The first version is published by hand,
   since trusted publishing can only be set up for a crate that exists. Published versions can be
   yanked but never deleted.
 - **Windows** installs from the `.zip` by hand for now. *Gap:* no Scoop or winget package yet, and
