@@ -1,0 +1,28 @@
+# Maintainer: pallewela <https://github.com/pallewela>
+#
+# Template for the AUR package bitbucket-bb-cli-bin. Rendered by render.sh, which fills in
+# @VERSION@ and the checksums. The publish run of .github/workflows/release.yml pushes the
+# result to the AUR. Don't edit the package on the AUR by hand: the next release overwrites it.
+pkgname=bitbucket-bb-cli-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='gh-style CLI for Bitbucket Cloud (pull requests, Pipelines, repos, API)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/pallewela/bb'
+license=('MIT')
+provides=('bitbucket-bb-cli')
+conflicts=('bitbucket-bb-cli')
+optdepends=('xdg-utils: open pages in the browser with --web')
+# Install the release binary as is (static musl): stripping it would make it differ from the
+# file the release's provenance attestation covers. namcap's "unstripped" warning is expected.
+options=('!strip' '!debug')
+source_x86_64=("${url}/releases/download/v${pkgver}/bb-v${pkgver}-x86_64-unknown-linux-musl.tar.gz")
+source_aarch64=("${url}/releases/download/v${pkgver}/bb-v${pkgver}-aarch64-unknown-linux-musl.tar.gz")
+sha256sums_x86_64=('@SHA256_X86_64@')
+sha256sums_aarch64=('@SHA256_AARCH64@')
+
+package() {
+  install -Dm755 bb "${pkgdir}/usr/bin/bb"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

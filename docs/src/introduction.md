@@ -17,7 +17,8 @@ bb api /user
 
 Where to go next:
 
-- [Install](install.md) `bb` with Homebrew, Cargo or a prebuilt binary.
+- [Install](install.md) `bb` with Homebrew, a Linux package (`.deb`, `.rpm`, AUR), Cargo or a
+  prebuilt binary.
 - [Authenticate](auth.md) with an Atlassian API token.
 - Read the [conventions](usage.md) every command follows, then the
   [command reference](reference/index.md).
