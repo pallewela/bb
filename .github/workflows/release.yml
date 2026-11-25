@@ -7,9 +7,10 @@ name: Release
 #            anywhere in the message also means major); the first release uses the
 #            version in Cargo.toml. "[skip release]" in the subject skips the release.
 #   build    one archive per target via build.yml (macOS arm64/x86_64, Linux arm64/x86_64
-#            static musl, Windows x86_64), each built and checked on a native runner (PRD §8)
-#   release  one GitHub release with every archive, its .sha256 and a signed SLSA build
-#            provenance attestation for all archives (bb-vX.Y.Z.intoto.jsonl, also stored by
+#            static musl, Windows x86_64), each built and checked on a native runner (PRD §8),
+#            plus a .deb and an .rpm per Linux architecture (packaging/nfpm.yaml)
+#   release  one GitHub release with every archive and package, its .sha256 and a signed SLSA
+#            build provenance attestation for all of them (bb-vX.Y.Z.intoto.jsonl, also stored by
 #            GitHub for `gh attestation verify`); then it starts a publish run of this file (below)
 #   changelog  a PR that regenerates CHANGELOG.md up to the new tag (git-cliff), opened with
 #            the CHANGELOG_TOKEN secret; merging it does not release. Warns if the secret is unset.
@@ -21,6 +22,8 @@ name: Release
 #              bitbucket-bb-cli from the tag (trusted publishing)
 #   homebrew   bumps the tap (pallewela/homebrew-tap) via repository_dispatch when the
 #              TAP_REPO_TOKEN secret is set
+#   aur        pushes bitbucket-bb-cli-bin (packaging/aur) to the AUR when the
+#              AUR_SSH_PRIVATE_KEY secret is set
 # This is a separate run so that release.yml is the top-level workflow when crates.io checks
 # the trusted-publishing token (a release itself runs inside CI's run, which is ci.yml's).
 # To retry or catch up by hand: gh workflow run release.yml -f publish_tag=vX.Y.Z
@@ -44,7 +47,7 @@ on:
     inputs:
       publish_tag:
         description: >-
-          Only publish an existing release (vX.Y.Z) to crates.io and the Homebrew tap. Leave
+          Only publish an existing release (vX.Y.Z) to crates.io, the Homebrew tap and the AUR. Leave
           empty to release main's HEAD.
         required: false
         default: ''
@@ -213,8 +216,8 @@ jobs:
             echo "x86_64_pc_windows_msvc=$(sum x86_64-pc-windows-msvc zip)"
           } | tee -a "$GITHUB_OUTPUT"
 
-      # Signed SLSA build provenance for every archive: which workflow, commit and run built
-      # it. GitHub stores it (`gh attestation verify FILE --repo pallewela/bb`), and the bundle
+      # Signed SLSA build provenance for every archive and package: which workflow, commit and
+      # run built it. GitHub stores it (`gh attestation verify FILE --repo pallewela/bb`), and the bundle
       # is attached to the release too, since a published release can't gain assets later.
       - name: Attest build provenance
         id: attest
@@ -223,6 +226,8 @@ jobs:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.deb
+            dist/*.rpm
 
       - name: Add the provenance bundle to the release assets
         env:
@@ -243,6 +248,7 @@ jobs:
       - name: Write release notes
         env:
           TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
           URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
@@ -268,6 +274,25 @@ jobs:
 
           Use the full name `pallewela/tap/bb` in brew commands: plain `bb` also matches an unrelated cask.
 
+          ## Install on Linux with a package
+
+          The package is called `bitbucket-bb-cli`; the command is `bb`. Pick the file for your
+          architecture from the table below (`amd64`/`x86_64` or `arm64`/`aarch64`).
+
+          ```sh
+          MD
+            echo "# Debian, Ubuntu and derivatives"
+            echo "curl -LO ${URL}/bitbucket-bb-cli_${VERSION}-1_amd64.deb"
+            echo "sudo apt install ./bitbucket-bb-cli_${VERSION}-1_amd64.deb"
+            echo
+            echo "# Fedora, RHEL, CentOS Stream and derivatives"
+            echo "sudo dnf install ${URL}/bitbucket-bb-cli-${VERSION}-1.x86_64.rpm"
+            echo
+            echo "# Arch Linux (AUR)"
+            echo "yay -S bitbucket-bb-cli-bin"
+            echo '```'
+            echo
+            cat <<'MD'
           ## Manual install
 
           macOS or Linux: replace `TARGET` with your platform's target from the table below
@@ -288,13 +313,13 @@ jobs:
             echo
             echo '## Verify a download'
             echo
-            echo "Each archive has a \`.sha256\` file and a signed build provenance attestation (also attached as \`bb-${TAG}.intoto.jsonl\`). With the GitHub CLI:"
+            echo "Each archive and package has a \`.sha256\` file and a signed build provenance attestation (also attached as \`bb-${TAG}.intoto.jsonl\`). With the GitHub CLI:"
             echo
             echo '```sh'
             echo "gh attestation verify bb-${TAG}-TARGET.tar.gz --repo ${GITHUB_REPOSITORY}"
             echo '```'
             echo
-            echo "| Platform | Archive | SHA256 |"
+            echo "| Platform | File | SHA256 |"
             echo "|---|---|---|"
             for f in dist/*.sha256; do
               read -r sum name < "$f"
@@ -305,6 +330,10 @@ jobs:
                 *x86_64-unknown-linux-musl*) p="Linux x86_64 (static)" ;;
                 *aarch64-unknown-linux-musl*) p="Linux arm64 (static)" ;;
                 *x86_64-pc-windows-msvc*) p="Windows x86_64" ;;
+                *_amd64.deb) p="Debian/Ubuntu x86_64" ;;
+                *_arm64.deb) p="Debian/Ubuntu arm64" ;;
+                *.x86_64.rpm) p="Fedora/RHEL x86_64" ;;
+                *.aarch64.rpm) p="Fedora/RHEL arm64" ;;
                 *) p="$name" ;;
               esac
               echo "| $p | \`$name\` | \`$sum\` |"
@@ -323,11 +352,11 @@ jobs:
           body_path: notes.md
           files: dist/*
 
-      # crates.io and the Homebrew tap are published by a separate manual (workflow_dispatch)
+      # crates.io, the Homebrew tap and the AUR are published by a separate manual (workflow_dispatch)
       # run of this file, so crates.io sees the registered workflow (release.yml) at the top
       # level (see the header). A workflow_dispatch started with GITHUB_TOKEN does create a
       # run (unlike most events).
-      - name: Start crates.io and Homebrew publishing
+      - name: Start crates.io, Homebrew and AUR publishing
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
@@ -432,9 +461,9 @@ jobs:
             done
 
   # ---- Publish run: `workflow_dispatch` with publish_tag set (started by the release job, or
-  # by hand to retry or catch up). crates.io and Homebrew are independent jobs, so one failing
-  # doesn't hold back the other. Both are idempotent: an existing crates.io version is
-  # skipped, and the tap bump just rewrites the formula.
+  # by hand to retry or catch up). crates.io, Homebrew and the AUR are independent jobs, so one
+  # failing doesn't hold back the others. All are idempotent: an existing crates.io version is
+  # skipped, the tap bump just rewrites the formula, and an unchanged AUR package isn't pushed.
   publish-check:
     name: Publish (check tag)
     if: github.event_name == 'workflow_dispatch' && inputs.publish_tag
@@ -606,3 +635,73 @@ jobs:
           done
           echo "::error::Tap formula did not update to ${VERSION} within 3 minutes."
           exit 1
+
+  # AUR package bitbucket-bb-cli-bin (packaging/aur), rendered with the release's checksums and
+  # pushed over SSH when the AUR_SSH_PRIVATE_KEY secret is set: the private key of an SSH key
+  # pair whose public key is on the maintainer's AUR account. The first push creates the
+  # package on the AUR.
+  aur:
+    name: Publish to the AUR
+    needs: publish-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check AUR key presence
+        id: aur
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "${AUR_SSH_PRIVATE_KEY:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::AUR_SSH_PRIVATE_KEY secret is not set; not publishing to the AUR."
+          fi
+
+      # main's packaging (the publish run is on main), so a fix to the PKGBUILD can be
+      # published for an existing release by re-running this.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        if: steps.aur.outputs.present == 'true'
+
+      - name: Render the package
+        if: steps.aur.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.publish-check.outputs.tag }}
+          VERSION: ${{ needs.publish-check.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*-linux-musl.tar.gz.sha256' --dir sums
+          sum() { awk '{print $1}' "sums/bb-${TAG}-$1-unknown-linux-musl.tar.gz.sha256"; }
+          packaging/aur/render.sh "$VERSION" "$(sum x86_64)" "$(sum aarch64)" "$RUNNER_TEMP/rendered"
+
+      - name: Push to the AUR
+        if: steps.aur.outputs.present == 'true'
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          VERSION: ${{ needs.publish-check.outputs.version }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          # The AUR's published ed25519 host key
+          # (SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4, see wiki.archlinux.org/title/AUR).
+          echo 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+          git clone -q ssh://aur@aur.archlinux.org/bitbucket-bb-cli-bin.git aur
+          cp "$RUNNER_TEMP/rendered/PKGBUILD" "$RUNNER_TEMP/rendered/.SRCINFO" aur/
+          cd aur
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "The AUR already has this package; nothing to push."
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "Update to ${VERSION}"
+          # The AUR only accepts pushes to master.
+          git push -q origin HEAD:master
+          echo "Pushed bitbucket-bb-cli-bin ${VERSION}: https://aur.archlinux.org/packages/bitbucket-bb-cli-bin"

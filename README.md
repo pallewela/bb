@@ -28,6 +28,9 @@ Documentation: https://pallewela.github.io/bb/
 
     brew install pallewela/tap/bb      # macOS and Linux (arm64 and x86_64)
     brew update && brew upgrade pallewela/tap/bb   # upgrade later
+    sudo apt install ./bitbucket-bb-cli_X.Y.Z-1_amd64.deb   # Debian/Ubuntu (.deb from a release)
+    sudo dnf install ./bitbucket-bb-cli-X.Y.Z-1.x86_64.rpm  # Fedora/RHEL (.rpm from a release)
+    yay -S bitbucket-bb-cli-bin        # Arch Linux, from the AUR
     cargo install bitbucket-bb-cli     # from crates.io (builds from source; installs `bb`)
     cargo install --path .             # from a clone
 
@@ -36,7 +39,10 @@ On crates.io the crate is `bitbucket-bb-cli` (`bb` and `bb-cli` are other projec
 needs Rust and a C compiler.
 
 Prebuilt binaries for macOS (Apple silicon, Intel), Linux (x86_64, arm64; static, any distro) and
-Windows (x86_64, `.zip`) are on the [releases page](https://github.com/pallewela/bb/releases).
+Windows (x86_64, `.zip`), and `.deb`/`.rpm` packages for x86_64 and arm64, are on the
+[releases page](https://github.com/pallewela/bb/releases). The Linux package is named
+`bitbucket-bb-cli`; the command is `bb`. See [Install](https://pallewela.github.io/bb/install.html)
+for all options.
 On Windows, unzip `bb.exe` into a folder on your `PATH`.
 
 ## Auth
@@ -128,5 +134,7 @@ with an archive for each target in [PRD §8](PRD.md):
 the patch version is bumped by default; put `[bump:minor]` or `[bump:major]` in the head commit's
 subject (the PR title, for a squash merge) to bump more, or `[skip release]` to skip. The
 Homebrew formula in [pallewela/homebrew-tap](https://github.com/pallewela/homebrew-tap) is updated afterwards
-(needs the `TAP_REPO_TOKEN` secret), and the crate is published to crates.io when the repository
-variable `CRATES_IO_PUBLISH` is `true`.
+(needs the `TAP_REPO_TOKEN` secret), the crate is published to crates.io when the repository
+variable `CRATES_IO_PUBLISH` is `true`, and the AUR package `bitbucket-bb-cli-bin` is pushed when
+the `AUR_SSH_PRIVATE_KEY` secret is set. Each release also carries `.deb` and `.rpm` packages
+(`packaging/`).

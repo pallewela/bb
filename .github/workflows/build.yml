@@ -1,7 +1,8 @@
 name: Build
 
 # Reusable: one release archive (+ .sha256) per target, each built and checked on a
-# native runner (PRD §8), uploaded as the artifact bb-<target>. Called by
+# native runner (PRD §8), uploaded as the artifact bb-<target>. The Linux targets also get a
+# .deb and an .rpm (+ .sha256), each installed and run before upload. Called by
 #   ci.yml       on pull requests, so a PR proves every release target still builds
 #   release.yml  before publishing, with the version computed there
 # Never publishes anything itself.
@@ -125,6 +126,47 @@ jobs:
           if command -v sha256sum >/dev/null; then sha256sum "$ARCHIVE"; else shasum -a 256 "$ARCHIVE"; fi |
             sed 's/ \*/  /' > "$ARCHIVE.sha256"
           cat "$ARCHIVE.sha256"
+
+      # .deb and .rpm from the same static binary (packaging/nfpm.yaml), for Debian/Ubuntu and
+      # Fedora/RHEL-family installs. nfpm is built with `go install` at a pinned version: the Go
+      # module checksum database verifies the source. Ubuntu runners come with Go.
+      - name: Build .deb and .rpm
+        if: contains(matrix.target, '-linux-musl')
+        env:
+          TARGET: ${{ matrix.target }}
+          NFPM_VERSION: v2.48.0
+        run: |
+          set -euo pipefail
+          case "$TARGET" in
+            x86_64-*) export ARCH=amd64 ;;
+            aarch64-*) export ARCH=arm64 ;;
+          esac
+          GOBIN="$RUNNER_TEMP/bin" go install "github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_VERSION}"
+          mkdir -p target/package
+          cp "target/$TARGET/release/bb" target/package/bb
+          for fmt in deb rpm; do
+            "$RUNNER_TEMP/bin/nfpm" package -f packaging/nfpm.yaml -p "$fmt" -t dist/
+          done
+          cd dist
+          for pkg in *.deb *.rpm; do sha256sum "$pkg" > "$pkg.sha256"; cat "$pkg.sha256"; done
+
+      # Install, run and remove each package on a real system of its family: the .deb on this
+      # Ubuntu runner, the .rpm in a Fedora container (same architecture, so it runs natively).
+      - name: Check the .deb and .rpm
+        if: contains(matrix.target, '-linux-musl')
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -q ./dist/*.deb
+          /usr/bin/bb --version | grep -qx "bb ${VERSION}"
+          dpkg -L bitbucket-bb-cli
+          sudo apt-get remove -y -q bitbucket-bb-cli
+          test ! -e /usr/bin/bb
+          docker run --rm -e VERSION -v "$PWD/dist:/pkg:ro" fedora:latest sh -euc '
+            dnf install -y -q /pkg/*.rpm
+            /usr/bin/bb --version | grep -qx "bb ${VERSION}"
+            rpm -ql bitbucket-bb-cli
+            dnf remove -y -q bitbucket-bb-cli
+            test ! -e /usr/bin/bb'
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:

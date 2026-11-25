@@ -1,0 +1,55 @@
+# .deb and .rpm packages of bb, built by nfpm (https://nfpm.goreleaser.com) from the static
+# musl binary that build.yml just built and checked. The same file serves both formats and
+# both architectures. build.yml sets the environment
+#   VERSION   the release version (no leading v)
+#   ARCH      amd64 or arm64 (nfpm maps it to x86_64 / aarch64 for rpm)
+# and copies the binary to target/package/bb (nfpm doesn't expand variables in paths).
+# Named like the crate (bitbucket-bb-cli): plain `bb` is another package in Debian. The command
+# is still /usr/bin/bb.
+name: bitbucket-bb-cli
+version: ${VERSION}
+release: 1
+arch: ${ARCH}
+platform: linux
+section: devel
+priority: optional
+maintainer: bb maintainers <https://github.com/pallewela/bb/issues>
+vendor: pallewela
+homepage: https://github.com/pallewela/bb
+license: MIT
+description: |-
+  gh-style CLI for Bitbucket Cloud
+  bb works with Bitbucket Cloud pull requests, Pipelines, repositories and the REST API from
+  the terminal, in the style of GitHub's gh. Statically linked: it needs no system libraries.
+# Used by `--web` to open the browser.
+suggests:
+  - xdg-utils
+
+contents:
+  - src: ./target/package/bb
+    dst: /usr/bin/bb
+    file_info:
+      mode: 0755
+  - src: ./README.md
+    dst: /usr/share/doc/bitbucket-bb-cli/README.md
+    file_info:
+      mode: 0644
+  # Debian keeps the license as doc/<package>/copyright; Fedora under /usr/share/licenses.
+  - src: ./LICENSE
+    dst: /usr/share/doc/bitbucket-bb-cli/copyright
+    packager: deb
+    file_info:
+      mode: 0644
+  - src: ./LICENSE
+    dst: /usr/share/licenses/bitbucket-bb-cli/LICENSE
+    packager: rpm
+    type: license
+    file_info:
+      mode: 0644
+
+rpm:
+  group: Development/Tools
+  summary: gh-style CLI for Bitbucket Cloud
+  compression: zstd
+deb:
+  compression: zstd

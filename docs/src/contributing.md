@@ -5,7 +5,8 @@ requests and pull requests are all welcome.
 
 ## Get bb
 
-- Install a release with Homebrew, Cargo or a prebuilt binary: see [Install](install.md).
+- Install a release with Homebrew, a Linux package (`.deb`, `.rpm`, AUR), Cargo or a prebuilt
+  binary: see [Install](install.md).
 - Every release, with its changelog and checksums, is on the
   [releases page](https://github.com/pallewela/bb/releases).
 - The source code is in the [GitHub repository](https://github.com/pallewela/bb):

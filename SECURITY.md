@@ -4,8 +4,8 @@
 
 Only the latest release of `bb` gets security fixes. Every push to `main` that passes CI is
 released, so a fix ships as a new release rather than a backport. Upgrade to the
-[latest release](https://github.com/pallewela/bb/releases/latest) (`brew upgrade pallewela/tap/bb`
-or `cargo install bitbucket-bb-cli`) before reporting.
+[latest release](https://github.com/pallewela/bb/releases/latest) (`brew upgrade pallewela/tap/bb`,
+`cargo install bitbucket-bb-cli`, the latest `.deb`/`.rpm`, or your AUR helper) before reporting.
 
 | Version        | Supported |
 | -------------- | --------- |
