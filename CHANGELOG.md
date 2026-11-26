@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.12](https://github.com/pallewela/bb/releases/tag/v0.2.12) - 2026-11-26
+
+### Features
+
+- **skill:** add `bb skill install` to install the agent skill ([#59](https://github.com/pallewela/bb/pull/59)) ([9efa342](https://github.com/pallewela/bb/commit/9efa342e7a2b3080649b53e032231b48accb99dd))
+
 ## [0.2.11](https://github.com/pallewela/bb/releases/tag/v0.2.11) - 2026-11-24
 
 ### Bug fixes
