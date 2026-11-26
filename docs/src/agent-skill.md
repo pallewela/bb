@@ -6,7 +6,11 @@ documents how an agent should use the ones in this book.
 
 ## Install for Claude Code
 
-From a clone of the repository:
+The skill is built into `bb`. [`bb skill install`](reference/skill.md) writes it to
+`~/.claude/skills/bitbucket-cli/SKILL.md` (`$CLAUDE_CONFIG_DIR/skills` if set); run it again after
+upgrading `bb` to update the skill. `--dir` installs into another skills directory.
+
+When working on the skill itself, link it from a clone instead, so edits take effect at once:
 
 ```sh
 ln -s "$PWD/skills/bitbucket-cli" ~/.claude/skills/bitbucket-cli
