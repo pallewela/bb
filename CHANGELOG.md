@@ -6,6 +6,12 @@ releases are tagged `vX.Y.Z` and published on
 [GitHub](https://github.com/pallewela/bb/releases). After each release, CI opens a PR
 that updates this file; to regenerate it by hand, run `git cliff -o CHANGELOG.md`.
 
+## [0.2.13](https://github.com/pallewela/bb/releases/tag/v0.2.13) - 2026-11-26
+
+### Features
+
+- **project:** add `bb project` and `repo edit`, `repo list -p` ([#61](https://github.com/pallewela/bb/pull/61)) ([d661e00](https://github.com/pallewela/bb/commit/d661e00d409f5b3ebfa55d183cb0f329f923e781))
+
 ## [0.2.12](https://github.com/pallewela/bb/releases/tag/v0.2.12) - 2026-11-26
 
 ### Features
