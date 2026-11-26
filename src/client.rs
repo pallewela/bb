@@ -145,7 +145,6 @@ impl Client {
     pub fn post(&self, path: &str, body: Option<&Value>) -> Result<Value> {
         self.json("POST", path, body)
     }
-    #[allow(dead_code)]
     pub fn put(&self, path: &str, body: &Value) -> Result<Value> {
         self.json("PUT", path, Some(body))
     }

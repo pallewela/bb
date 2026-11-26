@@ -1,6 +1,6 @@
 ---
 name: bitbucket-cli
-description: Work with Bitbucket Cloud from an agent using the `bb` CLI — find the right pull request for a branch, read PR status, reviews and CI checks, triage failed Pipelines logs, comment, and create or merge pull requests without unintended writes. Use when the git remote is bitbucket.org, or the user mentions Bitbucket, a Bitbucket PR, or Pipelines. Not for GitHub (`gh`) or Bitbucket Server/Data Center.
+description: Work with Bitbucket Cloud from an agent using the `bb` CLI — find the right pull request for a branch, read PR status, reviews and CI checks, triage failed Pipelines logs, comment, create or merge pull requests, and list or move repositories between projects without unintended writes. Use when the git remote is bitbucket.org, or the user mentions Bitbucket, a Bitbucket PR, or Pipelines. Not for GitHub (`gh`) or Bitbucket Server/Data Center.
 ---
 
 # Bitbucket Cloud with `bb`
@@ -15,8 +15,9 @@ where Bitbucket allows it. Run it inside a clone of the repository, or pass `-R 
    Notes such as "Showing 30 of 120…" go to stderr and never into `--json` output.
 2. **Reads are free; writes need the user's go-ahead.** Run any read-only command (table below)
    whenever it helps. Before a write — create, merge, close, approve, review, comment, pipeline
-   run/cancel, repo create/delete, `bb api` with a method other than GET — be sure the user asked
-   for that action on that object. Never merge, close or delete because it "seems done".
+   run/cancel, repo create/edit/delete, project create/edit/delete, `bb api` with a method other
+   than GET — be sure the user asked for that action on that object. Never merge, close or delete
+   because it "seems done".
 3. **Name the PR by id for every write.** `bb pr merge` with no argument, or with a branch name,
    resolves to *the open PR for that branch, else the most recently updated PR of any state* —
    possibly an old merged one. Resolve the id first (`bb_pr_for_branch` below), check it, then pass
@@ -54,6 +55,8 @@ Read-only — safe to run any time:
     bb pr diff ID [--name-only] [-e GLOB]       bb pr checks ID [--watch] --json
     bb pr create ... --dry-run                  bb run list [-b BRANCH] [-s failure] [-L N] --json
     bb run view N --json                        bb run view N --log-failed
+    bb project list [--owner WS] -L 0 --json    bb project view KEY [--owner WS] --json
+    bb repo list [WS] [-p KEY] -L 0 --json
     bb api PATH                                 (GET only: no -X, -f, -F or --input)
 
 Writes — only when the user asked for this action:
@@ -64,6 +67,9 @@ Writes — only when the user asked for this action:
     bb pr approve ID / unapprove ID             bb pr comment ID -b TEXT [--file PATH --line N]
     bb run cancel N                             bb workflow run [NAME] -r BRANCH [-f K=V]
     bb repo create / delete --yes               bb api PATH -X POST|PUT|DELETE ...
+    bb repo edit REPO [-p KEY] [-d TEXT]        (`--visibility` also needs --accept-visibility-change-consequences)
+    bb project create KEY --title NAME [-d TEXT]     bb project edit KEY [--title NAME] [-d TEXT]
+    bb project delete KEY --yes                 (Bitbucket refuses while the project has repositories)
 
 `ls` works for every `list`. `pr decline` = `pr close`; `pipeline` = `run`.
 
@@ -81,6 +87,12 @@ Check (`pr checks --json` items): `.state` (`SUCCESSFUL`, `FAILED`, `INPROGRESS`
 Pipeline (`run list --json` items, newest first): `.build_number`, `.state.name`
 (`PENDING`, `IN_PROGRESS`, `COMPLETED`), `.state.result.name` (`SUCCESSFUL`, `FAILED`, `ERROR`,
 `STOPPED`), `.target.ref_name`. `run view N --json` prints `{pipeline, steps}`.
+
+Repository (`repo view --json`, items of `repo list --json`): `.full_name`, `.project.key`,
+`.is_private`, `.mainbranch.name`, `.links.clone[] | select(.name == "ssh") | .href`.
+
+Project (`project view --json`, items of `project list --json`): `.key`, `.name`,
+`.description`, `.is_private`, `.links.html.href`.
 
 Comment (`pr comments --json` items): `.id`, `.content.raw`, `.user.account_id`, `.deleted`,
 `.inline.path`, `.links.self.href`.
@@ -298,6 +310,12 @@ Add `-d` to the final `bb pr merge` only if the user asked to delete the branch.
   uncommitted work).
 - **Re-run CI:** `bb workflow run -r BRANCH` (default pipeline) or `bb workflow run NAME -r BRANCH`
   (custom pipeline) — a write; it uses build minutes.
+- **Projects:** project commands and `-p` take the project's **key** (e.g. `NGPG`), not its name
+  ("NGA-Playground"). The workspace is `--owner WS`, else the current repo's. When the user names a
+  project, look up the key and stop if there isn't exactly one match:
+  `bb project list --owner WS -L 0 --json | jq -r --arg n "$NAME" '.[] | select(.name == $n) | .key'`.
+  List its repositories with `bb repo list WS -p KEY -L 0 --json`; move a repository (a write) with
+  `bb repo edit WS/REPO -p KEY`.
 - **Anything else:** `bb api PATH` (relative to `https://api.bitbucket.org/2.0`), e.g.
   `bb api repositories/WS/REPO/pullrequests/42/activity`. `--paginate` returns one array of all
   pages' `values`.

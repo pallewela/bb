@@ -8,6 +8,7 @@ Commands:
   repo       Work with repositories
   workspace  Work with workspaces [alias: org]
   pr         Work with pull requests
+  project    Work with projects (groups of repositories in a workspace)
   pipeline   Work with Bitbucket Pipelines
   workflow   Run custom pipelines (the `gh workflow` analog)
   api        Make an authenticated API request
