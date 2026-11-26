@@ -15,11 +15,6 @@ on:
         required: false
         type: string
         default: ''
-      ref:
-        description: Commit to build (empty = the caller's commit)
-        required: false
-        type: string
-        default: ''
 
 # Read only. A called workflow can't ask for more than its caller grants, and CI's release
 # job grants only what the release needs, so ask for just what checkout needs.
@@ -48,9 +43,9 @@ jobs:
       run:
         shell: bash
     steps:
+      # Always the caller's commit (github.sha): the PR's merge commit in CI, or the commit a
+      # release run tested. No ref input, so nothing can point a release build elsewhere.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          ref: ${{ inputs.ref }}
 
       - name: Resolve version
         env:
