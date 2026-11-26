@@ -9,6 +9,7 @@ mod output;
 mod pipeline;
 mod pr;
 mod repo;
+mod skill;
 mod workspace;
 
 use clap::{Parser, Subcommand};
@@ -64,6 +65,11 @@ enum Cmd {
     Api(api::Args),
     /// Open the repository in the browser
     Browse(browse::Args),
+    /// Install the agent skill that teaches AI coding agents to use bb
+    Skill {
+        #[command(subcommand)]
+        cmd: skill::Cmd,
+    },
 }
 
 fn main() {
@@ -79,6 +85,7 @@ fn main() {
         Cmd::Workflow { cmd } => pipeline::workflow(cmd),
         Cmd::Api(args) => api::run(args),
         Cmd::Browse(args) => browse::run(args),
+        Cmd::Skill { cmd } => skill::run(cmd),
     };
     if let Err(e) = res {
         eprintln!("bb: {e:#}");

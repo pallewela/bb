@@ -14,6 +14,7 @@
   - [bb workflow](reference/workflow.md)
   - [bb api](reference/api.md)
   - [bb browse](reference/browse.md)
+  - [bb skill](reference/skill.md)
 - [JSON output and exit codes](json-and-exit-codes.md)
 - [Agent skill](agent-skill.md)
 - [Releases and platforms](releases.md)

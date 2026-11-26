@@ -12,8 +12,8 @@ homepage = "https://github.com/pallewela/bb"
 readme = "README.md"
 keywords = ["bitbucket", "cli", "gh", "pull-request", "pipelines"]
 categories = ["command-line-utilities", "development-tools"]
-# What goes into the crate: just what's needed to build. Tests, scripts and docs stay in git.
-include = ["/src/**/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
+# What goes into the crate: just what's needed to build (SKILL.md is built into `bb skill install`). Tests, scripts and docs stay in git.
+include = ["/src/**/*.rs", "/skills/bitbucket-cli/SKILL.md", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [[bin]]
 name = "bb"

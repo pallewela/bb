@@ -86,6 +86,7 @@ to choose how many, or `-L 0` for all. `ls` works for every `list`.
 
     bb api /user [-i]                          bb api PATH -X POST -F count=3 -f name=x [-H 'K: V']
     bb browse [PATH[:LINE] | PR | SHA] [-n] [-c] [-a] [-s] [--blame]
+    bb skill install [--dir DIR]
 
 `[PR]` is an id, a PR URL, or a branch name; omitted, it's the current branch's PR.
 Exit codes follow `gh`: 1 = error, 4 = not logged in, 8 = checks still pending (`pr checks`).
@@ -96,9 +97,10 @@ Differences from `gh` (Bitbucket extras, and what can't be matched) are listed p
 [skills/bitbucket-cli/SKILL.md](skills/bitbucket-cli/SKILL.md) is an agent skill that teaches
 coding agents to use `bb` safely: `--json` + `jq` for reads, exit codes 1/4/8, explicit PR ids for
 every write, and tested shell recipes for finding a branch's PR, reading checks, triaging failed
-Pipelines, commenting, and creating or merging PRs. To install it for Claude Code:
+Pipelines, commenting, and creating or merging PRs. It is built into `bb`; to install or update it
+for Claude Code:
 
-    ln -s "$PWD/skills/bitbucket-cli" ~/.claude/skills/bitbucket-cli
+    bb skill install
 
 ## Testing
 

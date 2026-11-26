@@ -12,6 +12,7 @@ Commands:
   workflow   Run custom pipelines (the `gh workflow` analog)
   api        Make an authenticated API request
   browse     Open the repository in the browser
+  skill      Install the agent skill that teaches AI coding agents to use bb
   help       Print this message or the help of the given subcommand(s)
 ```
 
