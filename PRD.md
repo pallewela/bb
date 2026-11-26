@@ -99,16 +99,23 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 ### 5.2 `bb repo`
 | Command | API |
 |---|---|
-| `repo list [WORKSPACE] [--visibility public\|private] [-l LANG] [--fork\|--source] [-L N]` (alias `ls`) | `GET /repositories/{ws}?q=…`. No workspace: the current repo's workspace (Bitbucket removed cross-workspace listing). Filters run server-side: `is_private`, `language` (lowercased; Bitbucket stores and compares languages in lowercase), `parent != null` / `parent = null`. Columns: full name, visibility, language, updated. |
+| `repo list [WORKSPACE] [--visibility public\|private] [-l LANG] [--fork\|--source] [-p/--project KEY] [-L N]` (alias `ls`) | `GET /repositories/{ws}?q=…`. No workspace: the current repo's workspace (Bitbucket removed cross-workspace listing). Filters run server-side: `is_private`, `language` (lowercased; Bitbucket stores and compares languages in lowercase), `parent != null` / `parent = null`, `project.key`. Columns: full name, visibility, language, updated. |
 | `repo view [REPO] [-w/--web] [-b/--branch B]` | `GET /repositories/{ws}/{slug}` — name, description, main branch, visibility, clone URLs, web URL. `-b` adds `GET …/refs/branches/{B}`: the branch, its head commit, and its URL (`--json` still prints the repository). `-w -b B` opens `/src/B/`. |
 | `repo clone WORKSPACE/REPO [DIR] [-- git args]` | `git clone git@bitbucket.org:ws/repo.git` (SSH: API tokens don't work for git-over-HTTPS). |
 | `repo create WORKSPACE/REPO [--private/--public] [-d/--description] [-p/--project KEY] [-c/--clone]` (alias `new`) | `POST /repositories/{ws}/{slug}` with `scm: git`. Private by default. |
+| `repo edit [REPO] [-d/--description TEXT] [--visibility public\|private --accept-visibility-change-consequences] [-p/--project KEY]` | `GET /repositories/{ws}/{slug}` first (the PUT below creates a repository that doesn't exist, so a mistyped name must fail instead), then `PUT` with only the given fields. Needs at least one of them. `--project` moves the repository to that project. Prints `Edited repository WS/REPO`. |
 | `repo delete [REPO] --yes` | `DELETE /repositories/{ws}/{slug}`. Refuses without `--yes`. |
 
 **Differences from `gh`**
 - `repo list [WORKSPACE]` matches `gh repo list [OWNER]`, but with no argument it uses the current
   repo's workspace rather than "your" repos, because Bitbucket removed the cross-workspace listing.
 - *Extra:* `repo create -p/--project KEY` (Bitbucket projects). `gh repo create -p` doesn't exist, so there's no clash.
+- *Extra:* `repo list -p/--project KEY` and `repo edit -p/--project KEY` (list a project's repositories, move a
+  repository to a project). `gh repo list`/`gh repo edit` have no `-p`.
+- `repo edit --visibility` needs `--accept-visibility-change-consequences`, as in `gh`.
+- *Gap:* `repo edit` covers `-d`, `--visibility` and `--project` only. `gh`'s other flags (topics, merge
+  settings, `--enable-*`, `--template`, `--default-branch`, `--homepage`) aren't supported yet; most have
+  no Bitbucket field. With no flag, `gh repo edit` prompts; `bb` errors (§3).
 - *Gap:* `repo create` is private by default. `gh` makes you choose `--public`/`--private` or prompts;
   `bb` doesn't prompt (§3), and private is the safe default.
 - *Gap:* `repo create` needs `WORKSPACE/REPO`; there is no default owner.
@@ -127,6 +134,39 @@ treat the token as valid — a bad token gets 401, so 403 proves it authenticate
 **Differences from `gh`**
 - The `gh` analog is `gh org list`; `bb org list` / `bb org ls` work the same way.
 - *Extra:* `--admin` (Bitbucket's per-workspace admin flag); `workspace`/`ws` as Bitbucket names.
+
+### 5.2b `bb project`
+A Bitbucket project groups a workspace's repositories. `gh project` manages GitHub Projects (boards),
+which are a different thing, but its verbs and flags fit and a `gh` user will try them, so `bb project`
+uses them (§2.1, "Bitbucket-only concept gets the shape `gh` uses").
+
+| Command | API |
+|---|---|
+| `project list [--owner WS] [-L N] [-w/--web]` (alias `ls`) | `GET /workspaces/{ws}/projects?sort=key`. Default `-L 30`. Columns: key, name, visibility, updated. `-w` opens the workspace's projects page. |
+| `project view KEY [--owner WS] [-w/--web]` | `GET /workspaces/{ws}/projects/{key}`: key, name, description, visibility, updated, URL. |
+| `project create KEY --title NAME [--owner WS] [-d/--description] [--visibility public\|private]` | `POST /workspaces/{ws}/projects`. Private by default. Prints the project URL. |
+| `project edit KEY [--owner WS] [--title NAME] [-d/--description] [--visibility public\|private]` | `GET` first (the PUT below creates a project whose key doesn't exist, so a mistyped key must fail instead), then `PUT /workspaces/{ws}/projects/{key}` with every field, changed or not. Needs at least one change. Prints the project URL. |
+| `project delete KEY [--owner WS] --yes` | `DELETE /workspaces/{ws}/projects/{key}`. Refuses without `--yes`. Bitbucket only deletes empty projects. |
+
+The workspace is `--owner`, else the workspace of `-R` or the current repo. `--visibility` takes
+`public`/`private` in any case (`gh project` uses `PUBLIC`/`PRIVATE`). Needs the
+`read:project:bitbucket` scope, and `admin:project:bitbucket` for create, edit and delete.
+
+**Differences from `gh`**
+- A project is named by its KEY (e.g. `PROJ`) where `gh` uses a number, and the KEY is required:
+  `gh project view`/`edit`/`delete` prompt for a project when it's left out; `bb` doesn't prompt (§3).
+- `--owner` takes a workspace. With no `--owner`, `gh` uses your own account; `bb` uses the current
+  repo's workspace, since a Bitbucket account has no projects of its own.
+- *Extra:* `project create` takes the KEY as an argument (Bitbucket requires one) and `-d`/`--visibility`
+  (`gh project create` has only `--title`; `gh project edit` has both).
+- *Extra:* `project view` and `edit` show/change visibility as Bitbucket does; `gh project edit --readme` has
+  no Bitbucket field (*gap*).
+- *Gap:* `project delete` refuses without `--yes`; `gh project delete` doesn't ask. Deleting is the one
+  irreversible project write, so `bb` asks for the same confirmation as `repo delete`.
+- *Gap:* `project list --closed`, `project close`, `copy`, `mark-template`, `link`/`unlink`, `field-*` and
+  `item-*` belong to GitHub's boards and have no Bitbucket counterpart. Use `repo edit --project` to
+  put a repository in a project.
+- *Gap:* `--format json`, `-q/--jq`, `-t/--template`: use the global `--json` (§3).
 
 ### 5.3 `bb pr`
 `[PR]` argument = numeric id (optionally `#12`), a PR URL, or a branch name, as in `gh`.
@@ -282,7 +322,8 @@ documents how agents should use the ones above:
   id explicitly for every write (branch resolution, §5.3, can pick a merged PR); match branches
   exactly; confirm list results with `pr view` before acting (Bitbucket's PR list can lag after a
   write: a PR merged seconds ago may still be listed as open); no prompts, `--web` or `bb browse`;
-  `-L 0` when completeness matters; never print the token.
+  `-L 0` when completeness matters; never print the token; name projects by key, looked up from
+  the name with one exact match.
 - **Exit codes:** what 1, 2, 4 and 8 mean to an agent, including that `pr checks --json` still
   prints a JSON array when it exits 1 for a failed check.
 - **Reference:** read-only vs write commands, and the JSON fields agents need.

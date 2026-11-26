@@ -68,6 +68,8 @@ to choose how many, or `-L 0` for all. `ls` works for every `list`.
 
     bb org list [--admin]                      bb repo list [WORKSPACE] [--visibility private] [-l go]
     bb repo view [-w] [-b BRANCH]              bb repo clone / create [-c] / delete --yes
+    bb repo list -p PROJECT                    bb repo edit [-d TEXT] [-p PROJECT]
+    bb project list / view KEY / create KEY --title NAME / edit KEY / delete KEY --yes  [--owner WS]
 
     bb pr list [-s open|closed|merged|all] [-A NICK] [-B BASE] [-H HEAD] [-S TEXT] [-d] [-w]
     bb pr view [PR] [-c] [-w]                  bb pr checkout PR [-b LOCAL] [-f]   (alias: co)

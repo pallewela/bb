@@ -8,6 +8,7 @@ mod exit;
 mod output;
 mod pipeline;
 mod pr;
+mod project;
 mod repo;
 mod skill;
 mod workspace;
@@ -50,6 +51,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: pr::Cmd,
     },
+    /// Work with projects (groups of repositories in a workspace)
+    Project {
+        #[command(subcommand)]
+        cmd: project::Cmd,
+    },
     /// Work with Bitbucket Pipelines
     #[command(alias = "run")]
     Pipeline {
@@ -81,6 +87,7 @@ fn main() {
         Cmd::Repo { cmd } => repo::run(cmd),
         Cmd::Workspace { cmd } => workspace::run(cmd),
         Cmd::Pr { cmd } => pr::run(cmd),
+        Cmd::Project { cmd } => project::run(cmd),
         Cmd::Pipeline { cmd } => pipeline::run(cmd),
         Cmd::Workflow { cmd } => pipeline::workflow(cmd),
         Cmd::Api(args) => api::run(args),

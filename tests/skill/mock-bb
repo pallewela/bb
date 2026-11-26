@@ -54,6 +54,7 @@ case "${1:-} ${2:-}" in
   "pr create"|"pr new") has --dry-run && kind=READ ;;
   "run list"|"run ls"|"run view"|"run watch"|"run logs"|"pipeline list"|"pipeline ls"|"pipeline view"|"pipeline watch"|"pipeline logs") kind=READ ;;
   "repo view"|"repo list"|"repo ls"|"org list"|"workspace list"|"auth status") kind=READ ;;
+  "project list"|"project ls"|"project view") kind=READ ;;
   api\ *)
     kind=READ
     for f in -X --method -f --raw-field -F --field --input; do has "$f" && kind=WRITE; done

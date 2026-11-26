@@ -10,6 +10,7 @@
   - [bb repo](reference/repo.md)
   - [bb workspace (org)](reference/workspace.md)
   - [bb pr](reference/pr.md)
+  - [bb project](reference/project.md)
   - [bb pipeline (run)](reference/pipeline.md)
   - [bb workflow](reference/workflow.md)
   - [bb api](reference/api.md)

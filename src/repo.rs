@@ -1,4 +1,4 @@
-//! `bb repo`: list, view, clone, create, delete.
+//! `bb repo`: list, view, clone, create, edit, delete.
 use crate::client::{Client, enc, limit_arg};
 use crate::context::{Repo, git_passthrough};
 use crate::output::{json_mode, more_note, open_browser, print_json, s, short_time, table};
@@ -27,6 +27,9 @@ pub enum Cmd {
         /// Show only non-forks
         #[arg(long)]
         source: bool,
+        /// Only repositories in this project (key)
+        #[arg(short, long, value_name = "KEY")]
+        project: Option<String>,
     },
     /// Show a repository
     View {
@@ -68,6 +71,23 @@ pub enum Cmd {
         #[arg(short, long)]
         clone: bool,
     },
+    /// Edit a repository's description, visibility or project
+    #[command(group(clap::ArgGroup::new("change").args(["description", "visibility", "project"]).required(true).multiple(true)))]
+    Edit {
+        /// WORKSPACE/REPO or URL (default: current repo)
+        repo: Option<String>,
+        #[arg(short, long)]
+        description: Option<String>,
+        /// New visibility (needs --accept-visibility-change-consequences)
+        #[arg(long, value_parser = crate::project::visibility, requires = "accept_visibility_change_consequences")]
+        visibility: Option<bool>,
+        /// Confirm a visibility change
+        #[arg(long)]
+        accept_visibility_change_consequences: bool,
+        /// Move the repository to this project (key)
+        #[arg(short, long, value_name = "KEY")]
+        project: Option<String>,
+    },
     /// Delete a repository
     Delete {
         /// WORKSPACE/REPO or URL (default: current repo)
@@ -89,19 +109,29 @@ fn list_path(workspace: &str, limit: usize, q: Option<&str>) -> String {
 
 /// Bitbucket `q` filter for the `repo list` flags, or None when none is given.
 /// Bitbucket stores languages in lowercase and compares them case-sensitively.
-fn list_query(visibility: Option<&str>, language: Option<&str>, fork: bool, source: bool) -> Option<String> {
+fn list_query(
+    visibility: Option<&str>,
+    language: Option<&str>,
+    fork: bool,
+    source: bool,
+    project: Option<&str>,
+) -> Option<String> {
+    let quote = |v: &str| format!("\"{}\"", v.replace('\\', "\\\\").replace('"', "\\\""));
     let mut q = Vec::new();
     if let Some(v) = visibility {
         q.push(format!("is_private = {}", v == "private"));
     }
     if let Some(l) = language {
-        q.push(format!("language = \"{}\"", l.to_lowercase().replace('\\', "\\\\").replace('"', "\\\"")));
+        q.push(format!("language = {}", quote(&l.to_lowercase())));
     }
     if fork {
         q.push("parent != null".into());
     }
     if source {
         q.push("parent = null".into());
+    }
+    if let Some(k) = project {
+        q.push(format!("project.key = {}", quote(k)));
     }
     (!q.is_empty()).then(|| q.join(" AND "))
 }
@@ -117,7 +147,7 @@ fn clone(repo: &Repo, dir: Option<&str>, extra: &[String]) -> Result<()> {
 
 pub fn run(cmd: Cmd) -> Result<()> {
     match cmd {
-        Cmd::List { workspace, limit, visibility, language, fork, source } => {
+        Cmd::List { workspace, limit, visibility, language, fork, source, project } => {
             // Bitbucket removed the cross-workspace listing (GET /repositories?role=member now 404s).
             let ws = match workspace {
                 Some(ws) => ws,
@@ -126,7 +156,7 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 })?,
             };
             let (limit, chosen) = limit_arg(limit, 30);
-            let q = list_query(visibility.as_deref(), language.as_deref(), fork, source);
+            let q = list_query(visibility.as_deref(), language.as_deref(), fork, source, project.as_deref());
             let list = Client::new()?.list(&list_path(&ws, limit, q.as_deref()), limit)?;
             if json_mode() {
                 print_json(&Value::Array(list.items));
@@ -197,6 +227,29 @@ pub fn run(cmd: Cmd) -> Result<()> {
                 clone(&repo, None, &[])?;
             }
         }
+        Cmd::Edit { repo, description, visibility, accept_visibility_change_consequences: _, project } => {
+            let repo = resolve(repo)?;
+            let client = Client::new()?;
+            // PUT creates the repository when it doesn't exist, so check first: a mistyped name
+            // must fail, not make a new repository. Only the given fields are sent.
+            client.get(&format!("{}?fields=full_name", repo.api()))?;
+            let mut body = json!({});
+            if let Some(d) = description {
+                body["description"] = json!(d);
+            }
+            if let Some(p) = visibility {
+                body["is_private"] = json!(p);
+            }
+            if let Some(k) = project {
+                body["project"] = json!({ "key": k });
+            }
+            let v = client.put(&repo.api(), &body)?;
+            if json_mode() {
+                print_json(&v);
+            } else {
+                println!("Edited repository {}", s(&v, "full_name"));
+            }
+        }
         Cmd::Delete { repo, yes } => {
             let repo = resolve(repo)?;
             if !yes {
@@ -225,13 +278,14 @@ mod tests {
 
     #[test]
     fn list_queries() {
-        assert_eq!(list_query(None, None, false, false), None);
-        assert_eq!(list_query(Some("public"), None, false, false).unwrap(), "is_private = false");
+        assert_eq!(list_query(None, None, false, false, None), None);
+        assert_eq!(list_query(Some("public"), None, false, false, None).unwrap(), "is_private = false");
         assert_eq!(
-            list_query(Some("private"), Some("Go"), true, false).unwrap(),
+            list_query(Some("private"), Some("Go"), true, false, None).unwrap(),
             "is_private = true AND language = \"go\" AND parent != null"
         );
-        assert_eq!(list_query(None, Some("C#"), false, true).unwrap(), "language = \"c#\" AND parent = null");
-        assert_eq!(list_query(None, Some("a\"b"), false, false).unwrap(), "language = \"a\\\"b\"");
+        assert_eq!(list_query(None, Some("C#"), false, true, None).unwrap(), "language = \"c#\" AND parent = null");
+        assert_eq!(list_query(None, Some("a\"b"), false, false, None).unwrap(), "language = \"a\\\"b\"");
+        assert_eq!(list_query(None, None, false, false, Some("NGPG")).unwrap(), "project.key = \"NGPG\"");
     }
 }

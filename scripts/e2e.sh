@@ -14,7 +14,7 @@
 # Requirements:
 #   - bb logged in (`bb auth login`) or BITBUCKET_EMAIL/BITBUCKET_TOKEN set. The token needs the
 #     repository (read, write, admin, delete), pull request (read, write), pipeline (read, write),
-#     read:workspace:bitbucket and read:user scopes.
+#     read:workspace:bitbucket, read:project:bitbucket, admin:project:bitbucket and read:user scopes.
 #   - git with SSH access to bitbucket.org (`ssh -T git@ssh.bitbucket.org` works), jq, timeout.
 #   - Pipelines must be allowed in the workspace. Section 9 uses roughly 10 build minutes;
 #     set SKIP_PIPELINES=1 to skip it.
@@ -38,6 +38,7 @@ REPO2="bb-e2e-$RUN_ID-tmp"       # second repository, for `repo create -c` and `
 FULL="$WORKSPACE/$REPO"
 WEB="https://bitbucket.org/$FULL"
 TAG="E2E-$RUN_ID"                # unique text in PR titles, for `pr list -S`
+PROJECT="BBE2E$RUN_ID"           # throwaway project key, for `bb project` and `repo edit --project`
 
 for tool in git jq timeout; do
   command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
@@ -73,6 +74,7 @@ PASS=0
 FAIL=0
 FAILED=()
 CREATED_REPOS=()
+CREATED_PROJECTS=()
 TOKEN=""
 
 # Verbose output (VERBOSE=1: commands; VERBOSE=10: also their stdin, exit code, stdout and stderr).
@@ -180,6 +182,8 @@ cleanup() {
     [ ${#CREATED_REPOS[@]} -gt 0 ] && echo "KEEP=1: kept ${CREATED_REPOS[*]}"
   else
     for r in "${CREATED_REPOS[@]}"; do bb repo delete "$r" --yes >/dev/null 2>&1; done
+    # Projects last: Bitbucket only deletes empty ones.
+    for p in "${CREATED_PROJECTS[@]}"; do bb project delete "$p" --owner "$WORKSPACE" --yes >/dev/null 2>&1; done
   fi
   rm -rf "$TMP"
 }
@@ -353,6 +357,60 @@ t "repo list -L 1" bb repo list "$WORKSPACE" -L 1
 assert_rc 0; assert_eq "$(rows)" 1 "rows"
 t "repo list --json" bb repo list "$WORKSPACE" --json -L 0
 assert_rc 0; assert_json "map(.full_name) | index(\"$FULL\") != null"
+
+# `bb project create KEY --title NAME` creates a private project and prints its URL.
+t "project create" bb project create "$PROJECT" --title "bb e2e $RUN_ID" --owner "$WORKSPACE" -d "bb e2e test"
+assert_rc 0; assert_out "^https://bitbucket.org/$WORKSPACE/workspace/projects/$PROJECT\$"
+[ "$RC" -eq 0 ] && CREATED_PROJECTS+=("$PROJECT")
+
+# `bb project view KEY` shows it; without --owner, the workspace comes from -R.
+t "project view -R" bb project view "$PROJECT" -R "$FULL"
+assert_rc 0; assert_out "key: +$PROJECT"; assert_out "name: +bb e2e $RUN_ID"; assert_out 'visibility: +private'
+
+# `bb project list` lists the workspace's projects, sorted by key.
+t "project list" bb project list --owner "$WORKSPACE" -L 0
+assert_rc 0; assert_out '^KEY +NAME +VISIBILITY +UPDATED'; assert_out "^$PROJECT +bb e2e $RUN_ID +private "
+t "project ls --json" bb project ls --owner "$WORKSPACE" --json -L 0
+assert_rc 0; assert_json "map(.key) | index(\"$PROJECT\") != null"
+
+# `bb project edit` changes only the given fields.
+t "project edit --title" bb project edit "$PROJECT" --owner "$WORKSPACE" --title "bb e2e $RUN_ID renamed"
+assert_rc 0
+t "project view --json (edited)" bb project view "$PROJECT" --owner "$WORKSPACE" --json
+assert_rc 0; assert_json ".name == \"bb e2e $RUN_ID renamed\""; assert_json '.description == "bb e2e test"'
+assert_json '.is_private == true'
+
+# `bb project edit` of a missing key fails instead of creating it (PUT would create it).
+t "project edit (missing)" bb project edit "${PROJECT}X" --owner "$WORKSPACE" --title x
+assert_rc 1
+t "project view (missing, not created)" bb project view "${PROJECT}X" --owner "$WORKSPACE"
+assert_rc 1
+
+# `bb repo edit --project KEY` moves the repository; `repo list -p KEY` lists the project's repos.
+HOME_PROJECT="$(bb --json repo view "$FULL" | jq -r .project.key)"
+t "repo edit --project" bb repo edit "$FULL" --project "$PROJECT" -d "bb e2e test $RUN_ID moved"
+assert_rc 0; assert_out "^Edited repository $FULL\$"
+t "repo list -p" bb repo list "$WORKSPACE" -p "$PROJECT" -L 0
+assert_rc 0; assert_out "^$FULL "; assert_eq "$(rows)" 1 "rows"
+t "repo view --json (moved)" bb repo view "$FULL" --json
+assert_rc 0; assert_json ".project.key == \"$PROJECT\""; assert_json ".description == \"bb e2e test $RUN_ID moved\""
+
+# `repo edit --visibility` needs --accept-visibility-change-consequences (usage error otherwise).
+t "repo edit --visibility (no accept)" bb repo edit "$FULL" --visibility public
+assert_rc 2
+
+# `bb project delete` refuses without --yes, and Bitbucket refuses while the project has repos.
+t "project delete (no --yes)" bb project delete "$PROJECT" --owner "$WORKSPACE"
+assert_rc 1; assert_err 'without --yes'
+t "project delete (not empty)" bb project delete "$PROJECT" --owner "$WORKSPACE" --yes
+assert_rc 1
+
+# Move the repository back, then the empty project can be deleted.
+t "repo edit --project (back)" bb repo edit "$FULL" --project "$HOME_PROJECT"
+assert_rc 0
+t "project delete" bb project delete "$PROJECT" --owner "$WORKSPACE" --yes
+assert_rc 0; assert_out "^Deleted project $PROJECT in $WORKSPACE\$"
+[ "$RC" -eq 0 ] && CREATED_PROJECTS=()
 
 # `bb repo clone WS/REPO DIR` clones over SSH (an empty repository at this point).
 t "repo clone" bb repo clone "$FULL" "$CLONE"

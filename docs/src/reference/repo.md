@@ -18,6 +18,7 @@ visibility, language, updated.
 | `-l, --language <LANGUAGE>` | Filter by primary language |
 | `--fork` | Show only forks |
 | `--source` | Show only non-forks |
+| `-p, --project <KEY>` | Only repositories in this project |
 
 ## bb repo view
 
@@ -57,6 +58,26 @@ Create a repository `WORKSPACE/REPO` (private by default).
 | `-d, --description <DESCRIPTION>` | Repository description |
 | `-p, --project <PROJECT>` | Project key to create the repository in |
 | `-c, --clone` | Clone the new repository afterwards |
+
+## bb repo edit
+
+```text
+bb repo edit [OPTIONS] <--description <DESCRIPTION>|--visibility <VISIBILITY>|--project <KEY>> [REPO]
+```
+
+Edit a repository (default: the current repo). Only the given fields change. `bb` checks that the
+repository exists first, because Bitbucket's update call would otherwise create it.
+
+| Flag | Meaning |
+|---|---|
+| `-d, --description <DESCRIPTION>` | New description |
+| `--visibility <VISIBILITY>` | New visibility: `public`, `private` (needs `--accept-visibility-change-consequences`) |
+| `--accept-visibility-change-consequences` | Confirm a visibility change |
+| `-p, --project <KEY>` | Move the repository to this project |
+
+```sh
+bb repo edit ws/api --project PLAT
+```
 
 ## bb repo delete
 

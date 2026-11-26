@@ -10,6 +10,7 @@ Create a scoped API token for the Bitbucket product at
 
 - repository, pull request and pipeline scopes,
 - `read:workspace:bitbucket`, for `bb org list`,
+- `read:project:bitbucket` and `admin:project:bitbucket`, for `bb project`,
 - `read:user`, for `bb pr comment --edit-last` / `--delete-last`.
 
 Scopes are chosen when the token is created; `bb` has no `--scopes` flag.

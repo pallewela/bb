@@ -23,8 +23,8 @@ Bitbucket PR, or Pipelines. It is not for GitHub (`gh`) or Bitbucket Server/Data
 
 - **Read with `--json`, parse with `jq`.** Human tables can change; the JSON is the API's.
 - **Reads are free; writes need the user's go-ahead.** Create, merge, close, approve, review,
-  comment, pipeline run/cancel, repo create/delete and non-GET `bb api` calls only when the user
-  asked for that action on that object.
+  comment, pipeline run/cancel, repo create/edit/delete, project create/edit/delete and non-GET
+  `bb api` calls only when the user asked for that action on that object.
 - **Name the PR by id for every write.** A branch (or no argument) resolves to the open PR for
   that branch, else the most recently updated PR of any state, possibly an old merged one.
 - **Match branches exactly**, and confirm a list result with `bb pr view ID --json` before acting
@@ -32,6 +32,8 @@ Bitbucket PR, or Pipelines. It is not for GitHub (`gh`) or Bitbucket Server/Data
 - **Never prompt or open a browser:** no `bb auth login`, `-w/--web` or `bb browse` from an agent;
   pass bodies with `-b` or `-F`.
 - **Use `-L 0`** when completeness matters.
+- **Projects by key:** look up a project's key from its name (one exact match, else stop) before
+  `repo list -p` or `repo edit -p`.
 - **Keep secrets out of output:** never `bb auth token` or `bb auth status -t`.
 - **Check exit codes** 1, 2, 4 and 8 (see [exit codes](json-and-exit-codes.md#exit-codes)).
 
